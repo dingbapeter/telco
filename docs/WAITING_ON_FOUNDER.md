@@ -5,37 +5,20 @@ at the time it was asked. This file exists so that losing a conversation does
 not lose the decisions. When a decision is made, move it to the "Decided"
 section at the bottom with the date and the answer. Never delete a line.
 
-Last updated: 17 September 2026.
+Last updated: 17 September 2026, after the founder described the product.
 
 ## Needed before the core can be built
 
-### 1. What the product does, in one sentence
+### 1. What the product does
 
-The repository says "Telco airtime and data inter-network transfer". That can
-mean three different products:
-
-- **Airtime swap.** A person holding airtime on network A gets airtime or data
-  on network B, or cash, at a published rate. The platform receives the
-  airtime on its own number and pays out from its own float.
-- **Universal top-up.** A person pays money and receives airtime or data on
-  any network. This is a well served market with thin margins.
-- **Peer transfer across networks.** A person on network A sends airtime to a
-  friend on network B. This is the airtime swap with a different recipient.
-
-**Recommendation:** build the airtime swap, with the recipient allowed to be
-someone else. It is the only one of the three that networks do not already
-offer, so it is where the value is. Universal top-up can be added later as a
-payout option, because the outbound side of a swap is a top-up anyway.
+Decided. See the "Decided" section and docs/PRODUCT.md.
 
 ### 2. Country, networks, currency and language
 
-Everything depends on this: number formats, the transfer codes each network
-uses, which payment providers exist, what the regulator allows, and which
-language the interface speaks.
-
-**Recommendation:** one country to start, all of its main networks, and
-whichever language its users type in. A second country is a configuration
-job once the first one is earning.
+Taken as Nigeria, naira, MTN, Airtel, Glo and 9mobile, and English, because
+the founder priced the example in naira and named those networks. Say so if
+any of that is wrong. Number portability means a number's prefix only hints
+at its network, so the sender confirms the network on screen.
 
 ### 3. How airtime actually moves, today and at launch
 
@@ -55,22 +38,29 @@ over WhatsApp. The options for the build are:
   API. The API route is the one that scales and gives a receipt for every
   transaction.
 
-**Recommendation:** outbound through a licensed top-up provider in your
-country, inbound by network transfer to the platform's numbers with a
-notification bridge, and a manual confirmation screen in the admin panel as
-the fallback for the day the bridge is offline. Tell me which providers you
-already have an account with, if any.
+**Recommendation, now the design in docs/PRODUCT.md:** outbound through a
+licensed top-up provider, inbound by network transfer to the platform's
+numbers with a notification bridge, and a manual confirmation screen in the
+command centre for the day the bridge is offline. Still needed from you:
+
+- Which top-up provider you have or want an account with. VTpass is the
+  best documented in Nigeria and is the default adapter I will build first.
+- Whether you have, or will buy, one Android phone per network to hold the
+  receiving SIMs. The bridge is a small app that runs on it.
+- Whether any network has ever spoken to you about an agreement. If not,
+  every network's fee share starts at zero.
 
 ### 4. How money comes in and goes out
 
-If cash payouts or cash purchases are part of the product, which payment
-method do users have: mobile money (and which operator), bank transfer, or
-cards. Which payment provider do you have, or want, and is the business
-registered in a way that lets you open a merchant account.
+The fee comes out of the airtime, so no payment provider is needed to
+launch. Money enters when we buy airtime for an empty pool from the top-up
+provider (a bank transfer to their wallet, done by you) and when we sell
+airtime from an overfull pool as retail top-ups. For the retail side a
+payment provider is needed and that is a later decision.
 
-**Recommendation:** one provider that covers mobile money in the chosen
-country, and our own ledger from the first day, so that what any person is
-owed is known from our records and never from the provider's dashboard.
+**Recommendation:** launch without one. When retail top-up is built, use a
+Nigerian provider that supports bank transfer and cards, and keep our own
+ledger as the source of truth for every balance.
 
 ## Needed soon, but I will take a default and carry on
 
@@ -122,6 +112,25 @@ resale and suspend them. The design above keeps the platform's SIMs
 replaceable and its ledger independent, but the risk is commercial, not
 technical, and it is yours to weigh.
 
+### 12. The fee rule at launch
+
+The example was 20 naira on a 500 naira transfer. The engine supports a
+percentage, a flat amount, a floor and a ceiling, per network pair, all
+changeable at runtime. **Default until you set it:** 4 percent, floor 20
+naira, ceiling 200 naira, network share zero.
+
+### 13. Transfer limits at launch
+
+Minimum and maximum per transfer and per sender per day. **Default:** 100
+naira minimum, 10,000 naira maximum per transfer, 20,000 naira per sender
+per day, all runtime settings. Each network's own daily transfer cap will be
+entered in the command centre when you confirm it from the network's
+current terms, because those caps change and I will not guess them.
+
 ## Decided
 
-Nothing yet.
+- **17 September 2026. What the product does.** An airtime and data switch
+  between Nigerian networks. A sender moves airtime from their network to a
+  number on another network and pays a fee set in the command centre. The
+  fee is shared between us and the network the airtime left. The founder's
+  description and the resulting design are in docs/PRODUCT.md.
