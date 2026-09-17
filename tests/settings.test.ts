@@ -23,7 +23,7 @@ test("a setting the founder changes is read back from the database", async () =>
 test("a value outside its range is refused with the range in the message and nothing changes", async () => {
   await assert.rejects(
     as("founder", (c) => setSetting(c, "founder", "fee.percent_basis_points", 9_999)),
-    /Fee percentage must be between 0 and 5000. Nothing was changed./,
+    /Fee percentage must be between 0 percent and 50 percent. Nothing was changed./,
   );
   await assert.rejects(as("founder", (c) => setSetting(c, "founder", "transfer.min_kobo", "abc")), /whole number of kobo/);
   assert.equal((await getSetting(pool, "fee.percent_basis_points")).source, "fallback");

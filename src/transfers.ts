@@ -6,7 +6,7 @@ import { computeFee, loadFeeRule, type FeeBreakdown } from "./fees.ts";
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { assertKobo, formatNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
-import { getSettingValue, NETWORK_CODES, type NetworkCode } from "./settings.ts";
+import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
 
 export type TransferState =
   | "awaiting_inbound"
@@ -147,13 +147,13 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
   if (!recipient) throw new UserFacingError("bad_recipient_number", "The receiving number should be a Nigerian mobile number like 08021234567.");
 
   const amount = assertKobo(input.amountKobo);
-  const [min, max, dailyMax, caps, windowMinutes] = await Promise.all([
-    getSettingValue(db, "transfer.min_kobo"),
-    getSettingValue(db, "transfer.max_kobo"),
-    getSettingValue(db, "transfer.sender_daily_max_kobo"),
-    getSettingValue(db, "network.daily_transfer_cap_kobo"),
-    getSettingValue(db, "transfer.inbound_window_minutes"),
-  ]);
+  const [min, max, dailyMax, caps, windowMinutes] = await getSettingValues(db, [
+    "transfer.min_kobo",
+    "transfer.max_kobo",
+    "transfer.sender_daily_max_kobo",
+    "network.daily_transfer_cap_kobo",
+    "transfer.inbound_window_minutes",
+  ] as const);
   if (amount < min) throw new UserFacingError("below_minimum", `The smallest transfer is ${formatNaira(min)}.`);
   if (amount > max) throw new UserFacingError("above_maximum", `The largest transfer is ${formatNaira(max)}. Send it in more than one transfer.`);
   const networkCap = caps[from];
@@ -266,7 +266,7 @@ export async function recordInbound(db: Client, actor: string, n: InboundNotific
 
   // What arrived is what we move. The fee is worked out again on the real
   // amount, and an amount outside the limits is held for a person.
-  const [min, max] = await Promise.all([getSettingValue(db, "transfer.min_kobo"), getSettingValue(db, "transfer.max_kobo")]);
+  const [min, max] = await getSettingValues(db, ["transfer.min_kobo", "transfer.max_kobo"] as const);
   let holdReason: string | null = null;
   let fee: FeeBreakdown | null = null;
   if (amount < min) holdReason = "amount_below_minimum";
@@ -328,10 +328,7 @@ export async function startPayout(db: Client, actor: string, transferId: number)
     return { started: false, state: t.state, reason: `Transfer is ${t.state.replaceAll("_", " ")}, not waiting for payout.` };
   }
   const payout = t.payout_kobo!;
-  const [autoMax, ceilings] = await Promise.all([
-    getSettingValue(db, "payout.auto_approve_max_kobo"),
-    getSettingValue(db, "payout.daily_ceiling_kobo"),
-  ]);
+  const [autoMax, ceilings] = await getSettingValues(db, ["payout.auto_approve_max_kobo", "payout.daily_ceiling_kobo"] as const);
   if (payout > autoMax && !t.approved_by) {
     const moved = await claim(db, t.id, t.state, "awaiting_approval");
     if (moved) await recordEvent(db, t.id, t.state, "awaiting_approval", actor, { payout_kobo: payout, threshold_kobo: autoMax });
@@ -465,4 +462,60 @@ export async function expireQuotes(db: Queryable, actor = "system"): Promise<num
   );
   for (const r of rows) await recordEvent(db, r.id, "awaiting_inbound", "expired", actor);
   return rows.length;
+}
+
+// A person matches airtime that arrived without a quote, or from a different
+// number than the sender gave, to the transfer it was meant for. Network and
+// receiving number must agree; the sender number is the person's judgement
+// and is recorded as such.
+export async function attachNotification(db: Client, actor: string, notificationId: number, transferId: number): Promise<Transfer> {
+  const n = (await db.query<{ id: number; network_code: string; receiving_number: string; sender_number: string; amount_kobo: number; matched_transfer_id: number | null }>(
+    "SELECT id, network_code, receiving_number, sender_number, amount_kobo, matched_transfer_id FROM inbound_notifications WHERE id = $1 FOR UPDATE",
+    [notificationId],
+  )).rows[0];
+  if (!n) throw new UserFacingError("no_such_notification", "There is no notification with that id.");
+  if (n.matched_transfer_id !== null) throw new UserFacingError("already_matched", "That notification is already matched to a transfer.");
+  const t = (await db.query<Transfer>("SELECT * FROM transfers WHERE id = $1 FOR UPDATE", [transferId])).rows[0];
+  if (!t) throw new UserFacingError("no_such_transfer", "There is no transfer with that reference.");
+  if (t.state !== "awaiting_inbound" && t.state !== "expired") {
+    throw new UserFacingError("not_waiting", `Transfer ${t.reference} is ${t.state.replaceAll("_", " ")}, so it is not waiting for airtime.`);
+  }
+  if (t.from_network !== n.network_code || t.receiving_number !== n.receiving_number) {
+    throw new UserFacingError("wrong_route", `That airtime arrived on ${n.network_code} number ${n.receiving_number}, but ${t.reference} expects ${t.from_network} number ${t.receiving_number}.`);
+  }
+  const amount = n.amount_kobo;
+  const [min, max] = await getSettingValues(db, ["transfer.min_kobo", "transfer.max_kobo"] as const);
+  let holdReason: string | null = null;
+  let fee: FeeBreakdown | null = null;
+  if (amount < min) holdReason = "amount_below_minimum";
+  else if (amount > max) holdReason = "amount_above_maximum";
+  else fee = computeFee(amount, await loadFeeRule(db, t.from_network, t.to_network));
+  const nextState: TransferState = holdReason ? "held" : "inbound_confirmed";
+  const updated = (await claim(db, t.id, ["awaiting_inbound", "expired"], nextState, {
+    received_kobo: amount,
+    fee_kobo: fee?.feeKobo ?? null,
+    platform_share_kobo: fee?.platformShareKobo ?? null,
+    network_share_kobo: fee?.networkShareKobo ?? null,
+    payout_kobo: fee?.payoutKobo ?? null,
+    inbound_confirmed_at: new Date(),
+    hold_reason: holdReason,
+  }))!;
+  await postJournal(db, {
+    idempotencyKey: `transfer:${updated.id}:inbound`,
+    description: `Airtime received on ${n.network_code} for ${updated.reference}, matched by hand`,
+    reference: updated.reference,
+    postings: [
+      { account: `pool:${n.network_code}`, amountKobo: amount },
+      { account: "owed:senders", amountKobo: -amount },
+    ],
+  });
+  await db.query("UPDATE inbound_notifications SET matched_transfer_id = $1 WHERE id = $2", [updated.id, n.id]);
+  await recordEvent(db, updated.id, t.state, nextState, actor, {
+    notification_id: n.id,
+    received_kobo: amount,
+    matched_by_hand: true,
+    notification_sender: n.sender_number,
+    ...(holdReason ? { hold_reason: holdReason } : {}),
+  });
+  return updated;
 }

@@ -74,6 +74,33 @@ that matter most for money:
   A test now checks that every migration is recorded after a run and that a
   second run applies nothing.
 
+## Command centre suite (`tests/admin.test.ts`)
+
+Runs a real server on a random port and drives it the way a browser would,
+with cookies and without following redirects. Checked on 17 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| The login wall removed | Red |
+| The form token no longer checked | Red |
+| Any password accepted for a real administrator | Red, after the gap below was closed |
+| Logging out leaving the session alive on the server | Red, after the gap below was closed |
+| Page values written without escaping | Red |
+| The pools form booking twice on a double submit | Red |
+| The checklist green without a receiving number | Red |
+
+### Mutations that did not turn the suite red, and what was found
+
+- **Any password accepted.** The wrong-password test used an email with no
+  account, so the refusal came from the missing account and the password was
+  never compared. A gap. The test now creates a second administrator and
+  tries a wrong password against it, and a separate test keeps the check
+  that an unknown email is refused with the same message.
+- **Logout keeping the session.** The test checked that the next request was
+  turned away, but the browser had already dropped the cookie, so a server
+  that kept the session would have passed. A gap. The test now counts the
+  sessions on the server before and after.
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

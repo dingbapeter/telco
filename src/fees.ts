@@ -1,7 +1,7 @@
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
 import { applyBasisPoints, assertKobo, formatNaira } from "./money.ts";
-import { getSettingValue, type NetworkCode } from "./settings.ts";
+import { getSettingValues, type NetworkCode } from "./settings.ts";
 
 export type FeeRule = {
   percentBasisPoints: number;
@@ -46,14 +46,14 @@ export function computeFee(amountKobo: number, rule: FeeRule): FeeBreakdown {
 // The rule for one direction: the defaults, with any per pair override laid
 // on top, and the origin network's share of the fee.
 export async function loadFeeRule(db: Queryable, from: NetworkCode, to: NetworkCode): Promise<FeeRule> {
-  const [percent, flat, floor, ceiling, shares, overrides] = await Promise.all([
-    getSettingValue(db, "fee.percent_basis_points"),
-    getSettingValue(db, "fee.flat_kobo"),
-    getSettingValue(db, "fee.floor_kobo"),
-    getSettingValue(db, "fee.ceiling_kobo"),
-    getSettingValue(db, "fee.network_share_basis_points"),
-    getSettingValue(db, "fee.pair_overrides"),
-  ]);
+  const [percent, flat, floor, ceiling, shares, overrides] = await getSettingValues(db, [
+    "fee.percent_basis_points",
+    "fee.flat_kobo",
+    "fee.floor_kobo",
+    "fee.ceiling_kobo",
+    "fee.network_share_basis_points",
+    "fee.pair_overrides",
+  ] as const);
   const o = overrides[`${from}>${to}`] ?? {};
   return {
     percentBasisPoints: o.percent_basis_points ?? percent,

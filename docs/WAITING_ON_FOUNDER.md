@@ -127,6 +127,15 @@ per day, all runtime settings. Each network's own daily transfer cap will be
 entered in the command centre when you confirm it from the network's
 current terms, because those caps change and I will not guess them.
 
+### 14. Hosting and the domain, now needed
+
+The command centre is ready to run. To put it on a server I need to know
+where: the provider, whether Postgres is already there, and the domain name
+the command centre will answer on. I will give you the commands to run and
+never ask for the login. **Recommendation:** one small Linux server from a
+provider with a Lagos or European region, Postgres on the same machine,
+the service under systemd, and Caddy in front for the certificate.
+
 ## Decided
 
 - **17 September 2026. What the product does.** An airtime and data switch

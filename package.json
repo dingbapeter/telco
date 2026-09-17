@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "migrate": "node src/migrate.ts",
     "test": "scripts/test.sh",
-    "check": "scripts/check-prose.sh && npm run typecheck && npm test"
+    "check": "scripts/check-prose.sh && npm run typecheck && npm test",
+    "start": "node src/main.ts",
+    "mutations": "node scripts/mutation-check.ts"
   },
   "dependencies": {
     "pg": "^8.13.0"

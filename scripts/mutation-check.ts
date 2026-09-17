@@ -2,7 +2,7 @@
 // turns red. A mutation that leaves the suite green is reported, not fixed:
 // the method says investigate first, because it may be a second defence.
 // Run with: node scripts/mutation-check.ts
-import { execSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 type Mutation = { name: string; file: string; find: string; replace: string; suite: string };
@@ -37,6 +37,13 @@ const MUTATIONS: Mutation[] = [
   { name: "full receiving number still chosen", file: "src/transfers.ts", find: "WHERE r.network_code = $1 AND r.active AND (r.daily_cap_kobo = 0 OR u.used + $2 <= r.daily_cap_kobo)", replace: "WHERE r.network_code = $1 AND r.active AND ($2::bigint IS NOT NULL)", suite: "tests/transfers.test.ts" },
   { name: "network daily cap ignored", file: "src/transfers.ts", find: "if (networkCap > 0 && amount > networkCap) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
   { name: "migration runner records nothing", file: "src/migrate.ts", find: "await db.query(\"INSERT INTO schema_migrations (name) VALUES ($1)\", [name]);", replace: "", suite: "tests/migrations.test.ts" },
+  { name: "login wall removed", file: "src/web/http.ts", find: "if (route.auth && !request.admin) {", replace: "if (false) {", suite: "tests/admin.test.ts" },
+  { name: "form token not checked", file: "src/web/http.ts", find: "if (route.auth && request.method === \"POST\" && form.get(\"_csrf\") !== request.csrfToken) {", replace: "if (false) {", suite: "tests/admin.test.ts" },
+  { name: "wrong password accepted", file: "src/auth.ts", find: "const ok = admin !== undefined && admin.active && (await verifyPassword(password, admin.password_hash));", replace: "const ok = admin !== undefined && admin.active;", suite: "tests/admin.test.ts" },
+  { name: "logout keeps the session", file: "src/auth.ts", find: "if (token) await db.query(\"DELETE FROM admin_sessions WHERE token_hash = $1\", [hashToken(token)]);", replace: "", suite: "tests/admin.test.ts" },
+  { name: "page values not escaped", file: "src/web/html.ts", find: "  return escape(value);\n}", replace: "  return String(value);\n}", suite: "tests/admin.test.ts" },
+  { name: "pool form double submit books twice", file: "src/admin/pools.ts", find: "idempotencyKey: `admin:${kind}:${key}`,", replace: "idempotencyKey: `admin:${kind}:${key}:${Date.now()}`,", suite: "tests/admin.test.ts" },
+  { name: "checklist green without a receiving number", file: "src/checklist.ts", find: "      n > 0\n        ? { status: \"ok\", title: `${c} has a receiving number`", replace: "      true\n        ? { status: \"ok\", title: `${c} has a receiving number`", suite: "tests/admin.test.ts" },
   { name: "phone numbers with a country code rejected", file: "src/phone.ts", find: "if (digits.length === 13 && digits.startsWith(\"234\")) local = \"0\" + digits.slice(3);", replace: "if (false) local = digits;", suite: "tests/phone.test.ts" },
 ];
 
@@ -62,7 +69,11 @@ for (const m of MUTATIONS) {
     writeFileSync(m.file, original);
   }
 }
-execSync("git diff --quiet -- src migrations", { stdio: "inherit" });
+for (const m of MUTATIONS) {
+  // Every file must be back exactly as it was, whatever else happened.
+  const now = readFileSync(m.file, "utf8");
+  if (!now.includes(m.find)) throw new Error(`${m.file} was not restored after "${m.name}"`);
+}
 
 const survivors = results.filter((r) => r.outcome !== "red");
 console.log(`\n${results.length} mutations, ${results.length - survivors.length} caught.`);

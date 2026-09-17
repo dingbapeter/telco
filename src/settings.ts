@@ -32,7 +32,7 @@ function intBetween(min: number, max: number, unit: "kobo" | "basis points" | "m
       return { ok: false, reason: `must be a whole number of ${unit}` };
     }
     if (value < min || value > max) {
-      const show = unit === "kobo" ? formatNaira : String;
+      const show = unit === "kobo" ? formatNaira : unit === "basis points" ? (v: number) => `${v / 100} percent` : String;
       return { ok: false, reason: `must be between ${show(min)} and ${show(max)}` };
     }
     return { ok: true, value };
@@ -285,6 +285,22 @@ export async function getSetting<K extends SettingKey>(db: Queryable, key: K): P
 
 export async function getSettingValue<K extends SettingKey>(db: Queryable, key: K): Promise<SettingValue<K>> {
   return (await getSetting(db, key)).value;
+}
+
+// Reads several settings in one query. Callers holding a single connection
+// must not run queries in parallel on it, and one round trip is quicker anyway.
+export async function getSettingValues<const K extends readonly SettingKey[]>(
+  db: Queryable,
+  keys: K,
+): Promise<{ [I in keyof K]: SettingValue<K[I] & SettingKey> }> {
+  const { rows } = await db.query<{ key: string; value: unknown }>("SELECT key, value FROM settings WHERE key = ANY($1)", [keys]);
+  const stored = new Map(rows.map((r) => [r.key, r.value]));
+  return keys.map((key) => {
+    const spec = SETTINGS[key] as SettingSpec<unknown>;
+    if (!stored.has(key)) return spec.fallback;
+    const r = spec.validate(stored.get(key));
+    return r.ok ? r.value : spec.fallback;
+  }) as { [I in keyof K]: SettingValue<K[I] & SettingKey> };
 }
 
 // Writes a setting inside the caller's transaction. The audit trigger records
