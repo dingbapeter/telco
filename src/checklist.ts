@@ -5,6 +5,7 @@ import { formatNaira } from "./money.ts";
 import { listMigrations } from "./migrate.ts";
 import { getSetting, getSettingValue, NETWORK_CODES, SETTINGS } from "./settings.ts";
 import { STALE_AFTER_MINUTES } from "./admin/bridge.ts";
+import { railFromEnv } from "./rails/rail.ts";
 
 export type Check = {
   status: "ok" | "bad" | "warn";
@@ -16,7 +17,7 @@ export type Check = {
 // The launch checklist reads live configuration and live outcomes. Nothing
 // here is green because a setting exists; each row says what it found and,
 // when red, exactly what to set and where.
-export async function runChecklist(db: pg.Pool): Promise<Check[]> {
+export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process.env): Promise<Check[]> {
   const checks: Check[] = [];
 
   try {
@@ -117,6 +118,35 @@ export async function runChecklist(db: pg.Pool): Promise<Check[]> {
       ? { status: "ok", title: "Fees have been set by you", detail: "Percentage, minimum and maximum fee all come from the command centre." }
       : { status: "warn", title: "Fees are still the built-in defaults", detail: `Not yet set: ${unset.map((s) => SETTINGS[s.key].label.toLowerCase()).join(", ")}. The defaults are in force.`, fix: "Command centre, Settings, Fees: confirm each fee, even if you keep the default." },
   );
+
+  const rail = railFromEnv(env);
+  const automatic = await getSettingValue(db, "payout.automatic");
+  if (!rail) {
+    checks.push({ status: "warn", title: "No top-up provider keys", detail: "Every payout is done by hand from the transfer page until the provider is set up.", fix: "Follow docs/PROVIDER.md: open a VTpass account, put VTPASS_API_KEY, VTPASS_SECRET_KEY and VTPASS_PUBLIC_KEY in /etc/telco/telco.env, restart the service." });
+  } else {
+    const health = await rail.health();
+    checks.push(
+      health.ok
+        ? { status: "ok", title: `${rail.name} answers`, detail: health.message }
+        : { status: "bad", title: `${rail.name} is not working`, detail: health.message, fix: "Check the keys in /etc/telco/telco.env and that VTPASS_ENV is set to live on the real server, then restart the service." },
+    );
+    const ledgerWallet = await balance(db, rail.fundingAccount);
+    if (health.balanceKobo !== undefined) {
+      const gap = Math.abs(health.balanceKobo - ledgerWallet);
+      checks.push(
+        gap <= 100
+          ? { status: "ok", title: "Provider wallet matches our ledger", detail: `Provider reports ${formatNaira(health.balanceKobo)}; our ledger has ${formatNaira(ledgerWallet)}.` }
+          : { status: "warn", title: "Provider wallet and our ledger disagree", detail: `Provider reports ${formatNaira(health.balanceKobo)}; our ledger has ${formatNaira(ledgerWallet)}.`, fix: "Under Pools, record money added to or lost from the provider wallet so the ledger matches what the provider holds." },
+      );
+    } else {
+      checks.push({ status: "warn", title: "Provider wallet balance is only in our ledger", detail: `Our ledger has ${formatNaira(ledgerWallet)} in the provider wallet. The provider did not report its own figure.`, fix: "Compare with the balance shown at vtpass.com now and then, and record any difference under Pools." });
+    }
+    checks.push(
+      automatic
+        ? { status: "ok", title: "Automatic payouts are on", detail: "Confirmed transfers are paid through the provider without a person." }
+        : { status: "warn", title: "Automatic payouts are off", detail: "The provider is set up but every payout still waits for a person.", fix: "Command centre, Settings, Guardrails: turn automatic payouts on." },
+    );
+  }
 
   const stuck = (
     await db.query<{ n: number }>(

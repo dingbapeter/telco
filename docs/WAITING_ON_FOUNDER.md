@@ -164,10 +164,11 @@ known.
 - **17 September 2026. Hosting.** The founder already has a server and a
   domain. Still needed from them: the provider, whether Postgres is on the
   machine, and the domain name, when they are ready to deploy.
-- **17 September 2026. How airtime moves today and the top-up provider.**
-  The founder will come back on this. Until then, outbound payouts are done
-  by hand from the command centre, and the provider adapter is next in line
-  once they name the provider.
+- **17 September 2026. The top-up provider.** VTpass, on my
+  recommendation; the founder asked for the adapter and a guide. Built; see
+  docs/PROVIDER.md. Automatic payouts are off until the founder has an
+  account, keys on the server, and turns the switch on. How the founder
+  moves airtime today is still to come and changes nothing in the build.
 - **17 September 2026. What the product does.** An airtime and data switch
   between Nigerian networks. A sender moves airtime from their network to a
   number on another network and pays a fee set in the command centre. The

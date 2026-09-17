@@ -23,7 +23,7 @@ const MUTATIONS: Mutation[] = [
   { name: "audit actor ignored", file: "migrations/0001_foundation.sql", find: "actor  text := coalesce(nullif(current_setting('app.actor', true), ''), 'system');", replace: "actor  text := 'system';", suite: "tests/settings.test.ts" },
   { name: "state claim no longer conditional", file: "src/transfers.ts", find: "WHERE id = $1 AND state = ANY($3::text[]) RETURNING *", replace: "WHERE id = $1 AND ($3::text[]) IS NOT NULL RETURNING *", suite: "tests/transfers.test.ts" },
   { name: "duplicate notification processed again", file: "src/transfers.ts", find: "ON CONFLICT (dedupe_hash) DO NOTHING RETURNING id`,\n    [network, receiving, sender, amount, n.rawText, n.source, n.occurredAt ?? null, actor, hash],", replace: "ON CONFLICT (dedupe_hash) DO UPDATE SET recorded_by = EXCLUDED.recorded_by RETURNING id`,\n    [network, receiving, sender, amount, n.rawText, n.source, n.occurredAt ?? null, actor, hash],", suite: "tests/transfers.test.ts" },
-  { name: "pool balance check removed", file: "src/transfers.ts", find: "  if (pool < payout) {", replace: "  if (pool < payout && false) {", suite: "tests/transfers.test.ts" },
+  { name: "pool balance check removed", file: "src/transfers.ts", find: "  if (available < payout) {", replace: "  if (available < payout && false) {", suite: "tests/transfers.test.ts" },
   { name: "approval threshold ignored", file: "src/transfers.ts", find: "if (payout > autoMax && !t.approved_by) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
   { name: "daily payout ceiling ignored", file: "src/transfers.ts", find: "if (paidToday.rows[0]!.total + payout > ceiling) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
   { name: "sender daily limit ignored", file: "src/transfers.ts", find: "if (usedToday + amount > dailyMax) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
@@ -56,6 +56,16 @@ const MUTATIONS: Mutation[] = [
   { name: "expired quote still tells the sender to send", file: "src/public/pages.ts", find: "${t.state === \"expired\" || expired", replace: "${false", suite: "tests/public.test.ts" },
   { name: "dial code shows the placeholder instead of the amount", file: "src/public/pages.ts", find: "const dial = code ? code.replace(\"{amount}\", amountNaira).replace(\"{number}\", t.receiving_number) : \"\";", replace: "const dial = code ? code.replace(\"{number}\", t.receiving_number) : \"\";", suite: "tests/public.test.ts" },
   { name: "network suggestion from the prefix broken", file: "src/public/pages.ts", find: "WHERE prefix = $1\", [prefixOf(local)]", replace: "WHERE prefix = $1\", [local]", suite: "tests/public.test.ts" },
+  { name: "automatic payouts run while switched off", file: "src/worker.ts", find: "  if (!automatic) {", replace: "  if (false) {", suite: "tests/rails.test.ts" },
+  { name: "attempt limit ignored", file: "src/worker.ts", find: "AND payout_attempts < $2)", replace: "AND $2 IS NOT NULL)", suite: "tests/rails.test.ts" },
+  { name: "unanswered payout sent again instead of checked", file: "src/worker.ts", find: "    const result = await rail.check(t.payout_request_id!);", replace: "    const result = await rail.send({ requestId: t.payout_request_id!, network: t.to_network, number: t.recipient_number, amountKobo: t.payout_kobo! });", suite: "tests/rails.test.ts" },
+  { name: "provider commission not booked", file: "src/transfers.ts", find: "    if (via.commissionKobo > 0) postings.push({ account: \"revenue:provider_commission\", amountKobo: -via.commissionKobo });", replace: "    postings.push({ account: via.account, amountKobo: -via.commissionKobo });", suite: "tests/rails.test.ts" },
+  { name: "provider figures not checked", file: "src/transfers.ts", find: "    if (via.chargedKobo + via.commissionKobo !== moved.payout_kobo!) {", replace: "    if (false) {", suite: "tests/rails.test.ts" },
+  { name: "final failure retried anyway", file: "src/transfers.ts", find: "const nextAttempt = options.retryable ? new Date(Date.now() + wait * 60_000) : null;", replace: "const nextAttempt = new Date(Date.now() + wait * 60_000);", suite: "tests/rails.test.ts" },
+  { name: "low wallet read as final failure", file: "src/rails/vtpass.ts", find: "if (code === \"018\") return { kind: \"retry\"", replace: "if (code === \"018\") return { kind: \"failed\"", suite: "tests/rails.test.ts" },
+  { name: "request id without the Lagos timestamp", file: "src/rails/vtpass.ts", find: "return `${parts[\"year\"]}${parts[\"month\"]}${parts[\"day\"]}${parts[\"hour\"]}${parts[\"minute\"]}${randomBytes(6).toString(\"hex\")}`;", replace: "return randomBytes(12).toString(\"hex\");", suite: "tests/rails.test.ts" },
+  { name: "wrong service id for 9mobile", file: "src/rails/vtpass.ts", find: "\"9MOBILE\": \"etisalat\"", replace: "\"9MOBILE\": \"9mobile\"", suite: "tests/rails.test.ts" },
+  { name: "wallet balance not checked before sending", file: "src/transfers.ts", find: "  if (available < payout) {", replace: "  if (false) {", suite: "tests/rails.test.ts" },
   { name: "phone numbers with a country code rejected", file: "src/phone.ts", find: "if (digits.length === 13 && digits.startsWith(\"234\")) local = \"0\" + digits.slice(3);", replace: "if (false) local = digits;", suite: "tests/phone.test.ts" },
 ];
 
@@ -82,9 +92,10 @@ for (const m of MUTATIONS) {
   }
 }
 for (const m of MUTATIONS) {
-  // Every file must be back exactly as it was, whatever else happened.
-  const now = readFileSync(m.file, "utf8");
-  if (!now.includes(m.find)) throw new Error(`${m.file} was not restored after "${m.name}"`);
+  // Every file must be back exactly as it was, whatever else happened. A
+  // mutation that did not apply is reported below, not here.
+  const applied = results.find((r) => r.name === m.name)?.outcome !== "did not apply";
+  if (applied && !readFileSync(m.file, "utf8").includes(m.find)) throw new Error(`${m.file} was not restored after "${m.name}"`);
 }
 
 const survivors = results.filter((r) => r.outcome !== "red");

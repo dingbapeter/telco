@@ -85,6 +85,9 @@ function actions(req: Request, t: Transfer): Html {
   if (t.state === "held" && t.payout_kobo !== null) {
     out.push(form("release", "Release for payout", "", html`<p>Held because: ${t.hold_reason?.replaceAll("_", " ")}. Release it once you have fixed that.</p>`));
   }
+  if (t.state === "payout_failed") {
+    out.push(form("payout/retry", "Try the provider again now", "secondary", html`<p>Puts this transfer at the front of the automatic payout queue. Needs automatic payouts to be on and the provider set up.</p>`));
+  }
   if (t.state === "inbound_confirmed" || t.state === "payout_failed") {
     out.push(
       form(
@@ -153,7 +156,9 @@ async function detailPage(req: Request, db: pg.Pool, id: number, message?: Html)
       ${t.refunded_at ? html`<dt>Refunded</dt><dd>${when(t.refunded_at)}, reference ${t.payout_reference}</dd>` : ""}
       ${t.approved_by ? html`<dt>Approved by</dt><dd>${t.approved_by} at ${when(t.approved_at)}</dd>` : ""}
       ${t.hold_reason ? html`<dt>Held because</dt><dd>${t.hold_reason.replaceAll("_", " ")}</dd>` : ""}
-      <dt>Payout attempts</dt><dd>${t.payout_attempts}</dd>
+      <dt>Payout attempts</dt><dd>${t.payout_attempts}${t.payout_rail ? html`, last through ${t.payout_rail}` : ""}${t.payout_request_id ? html`, provider request ${t.payout_request_id}` : ""}</dd>
+      ${t.payout_last_error ? html`<dt>Last provider answer</dt><dd>${t.payout_last_error}</dd>` : ""}
+      ${t.payout_next_attempt_at && t.state === "payout_failed" ? html`<dt>Next automatic try</dt><dd>${when(t.payout_next_attempt_at)}</dd>` : ""}
       ${t.state === "awaiting_inbound" || t.state === "expired"
         ? html`<dt>Sender was told to dial</dt><dd>${dial ? dial.replace("{amount}", String(t.requested_kobo / 100)).replace("{number}", t.receiving_number).replace("{pin}", "PIN") : html`<span class="muted">no transfer code set for ${t.from_network} in Settings</span>`}</dd>`
         : ""}
@@ -215,6 +220,10 @@ export function registerTransfers(app: App): void {
     const reference = requiredField(req.form, "reference", "The network's reference");
     const t = await withActor(actor(req.admin), (c) => completePayout(c, actor(req.admin), id, reference), db);
     return t ? notice("ok", `${t.reference} is complete. ${money(t.payout_kobo)} paid on ${t.to_network}, fee ${money(t.fee_kobo)} booked.`) : notice("problem", "This transfer was not paying out, so nothing was recorded. Check its history below.");
+  });
+  act("payout/retry", async (req, db, id) => {
+    const { rows } = await withActor(actor(req.admin), (c) => c.query<{ reference: string }>("UPDATE transfers SET payout_next_attempt_at = now(), payout_attempts = 0 WHERE id = $1 AND state = 'payout_failed' RETURNING reference", [id]), db);
+    return rows[0] ? notice("ok", `${rows[0].reference} will be tried again on the next automatic payout run, within a minute.`) : notice("problem", "This transfer is not in a failed state, so there is nothing to retry.");
   });
   act("payout/failed", async (req, db, id) => {
     const reason = requiredField(req.form, "reason", "What went wrong");

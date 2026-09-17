@@ -142,6 +142,25 @@ September 2026, all six breakages caught first time.
 The suite also holds each page under a size limit, so a change that makes
 the pages heavy for a weak connection fails the build.
 
+## Provider and automatic payouts suite (`tests/rails.test.ts`)
+
+Runs a stand-in for VTpass that answers the way their interface does, and
+drives the client and the payout worker through every answer the provider
+can give. Checked on 17 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| Automatic payouts running while the switch is off | Red |
+| The attempt limit ignored | Red |
+| An unanswered payout sent again instead of checked by request id | Red |
+| The provider's commission not booked | Red |
+| Provider figures that do not add up booked anyway | Red |
+| A failure the provider calls final retried anyway | Red |
+| A low wallet read as a final failure | Red |
+| The request id missing the Lagos timestamp the provider requires | Red |
+| The wrong service id for 9mobile | Red |
+| The wallet balance not checked before sending | Red |
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

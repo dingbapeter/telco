@@ -190,12 +190,12 @@ test("float recorded on the pools page books once even when the form is submitte
   await b.login();
   const page = await b.get("/admin/pools");
   const key = /name="key" value="([^"]+)"/.exec(page.text)![1]!;
-  const first = await b.post("/admin/pools/fund", { network: "GLO", amount: "3,000", note: "bought, receipt 9", key });
+  const first = await b.post("/admin/pools/fund", { account: "pool:GLO", amount: "3,000", note: "bought, receipt 9", key });
   assert.match(oks(first.text).join(" "), /Recorded N3,000 added to the GLO pool/);
-  const second = await b.post("/admin/pools/fund", { network: "GLO", amount: "3,000", note: "bought, receipt 9", key });
+  const second = await b.post("/admin/pools/fund", { account: "pool:GLO", amount: "3,000", note: "bought, receipt 9", key });
   assert.match(oks(second.text).join(" "), /not booked twice/);
   assert.equal(await balance(pool, "pool:GLO"), naira(3_000));
-  const loss = await b.post("/admin/pools/loss", { network: "GLO", amount: "200", note: "SIM barred", key: key + "x" });
+  const loss = await b.post("/admin/pools/loss", { account: "pool:GLO", amount: "200", note: "SIM barred", key: key + "x" });
   assert.match(oks(loss.text).join(" "), /Recorded N200 lost from the GLO pool/);
   assert.equal(await balance(pool, "pool:GLO"), naira(2_800));
   assert.equal(await balance(pool, "expense:losses"), naira(200));

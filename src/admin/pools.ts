@@ -8,6 +8,13 @@ import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf, money, nairaField, requiredField, when } from "./shared.ts";
 
+// Where value can be put in or lost from: a pool of airtime on each
+// network's SIM, or money held with the provider.
+const FUNDABLE = [
+  ...NETWORK_CODES.map((c) => ({ code: `pool:${c}`, label: `${c} pool (airtime on our ${c} SIM)` })),
+  { code: "wallet:vtpass", label: "Provider wallet (money with VTpass)" },
+];
+
 async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200): Promise<{ kind: "html"; status: number; body: string }> {
   const [all, journals] = await Promise.all([
     balances(db),
@@ -26,11 +33,12 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
     <table><tr><th>Account</th><th>Kind</th><th class="num">Balance</th></tr>
       ${all.map((a) => html`<tr><td>${a.name}<br><code>${a.code}</code></td><td>${a.kind}</td><td class="num">${money(a.balanceKobo)}</td></tr>`)}
     </table>
-    <h2>Record airtime you put into a pool</h2>
+    <h2>Record airtime or money you put in</h2>
+    <p class="muted">Airtime bought onto a SIM goes into that network's pool. Money paid into the provider's wallet goes into the provider wallet.</p>
     <form method="post" action="/admin/pools/fund" class="panel">${csrf(req)}
       <input type="hidden" name="key" value="${key}">
       <div class="row">
-        <div><label for="fnet">Network</label><select id="fnet" name="network">${NETWORK_CODES.map((c) => html`<option value="${c}">${c}</option>`)}</select></div>
+        <div><label for="fnet">Into</label><select id="fnet" name="account">${FUNDABLE.map((a) => html`<option value="${a.code}">${a.label}</option>`)}</select></div>
         <div><label for="famt">Amount in naira</label><input id="famt" name="amount" type="text" inputmode="decimal" required></div>
       </div>
       <label for="fnote">Where it came from <span class="hint">for example "bought from the top-up provider, receipt 1234"</span></label><input id="fnote" name="note" type="text" required>
@@ -40,7 +48,7 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
     <form method="post" action="/admin/pools/loss" class="panel">${csrf(req)}
       <input type="hidden" name="key" value="${key}">
       <div class="row">
-        <div><label for="lnet">Network</label><select id="lnet" name="network">${NETWORK_CODES.map((c) => html`<option value="${c}">${c}</option>`)}</select></div>
+        <div><label for="lnet">From</label><select id="lnet" name="account">${FUNDABLE.map((a) => html`<option value="${a.code}">${a.label}</option>`)}</select></div>
         <div><label for="lamt">Amount in naira</label><input id="lamt" name="amount" type="text" inputmode="decimal" required></div>
       </div>
       <label for="lnote">What happened <span class="hint">for example "SIM barred by the network with N1,200 on it"</span></label><input id="lnote" name="note" type="text" required>
@@ -60,8 +68,9 @@ export function registerPools(app: App): void {
   const record = (path: string, kind: "fund" | "loss") =>
     app.post(`/admin/pools/${path}`, async (req, db) => {
       try {
-        const network = requiredField(req.form, "network", "Network");
-        if (!(NETWORK_CODES as readonly string[]).includes(network)) throw new UserFacingError("unknown_network", "Choose a network.");
+        const account = requiredField(req.form, "account", "Where");
+        const chosen = FUNDABLE.find((a) => a.code === account);
+        if (!chosen) throw new UserFacingError("unknown_account", "Choose a pool or the provider wallet.");
         const amount = nairaField(req.form, "amount", "Amount");
         if (amount <= 0) throw new UserFacingError("bad_amount", "The amount must be more than zero.");
         const note = requiredField(req.form, "note", kind === "fund" ? "Where it came from" : "What happened");
@@ -69,15 +78,15 @@ export function registerPools(app: App): void {
         const result = await withActor(actor(req.admin), (c) =>
           postJournal(c, {
             idempotencyKey: `admin:${kind}:${key}`,
-            description: kind === "fund" ? `Float added to ${network} by ${actor(req.admin)}: ${note}` : `Loss on ${network} recorded by ${actor(req.admin)}: ${note}`,
+            description: kind === "fund" ? `Added to ${chosen.label} by ${actor(req.admin)}: ${note}` : `Loss from ${chosen.label} recorded by ${actor(req.admin)}: ${note}`,
             postings:
               kind === "fund"
-                ? [{ account: `pool:${network}`, amountKobo: amount }, { account: "equity:float", amountKobo: -amount }]
-                : [{ account: "expense:losses", amountKobo: amount }, { account: `pool:${network}`, amountKobo: -amount }],
+                ? [{ account, amountKobo: amount }, { account: "equity:float", amountKobo: -amount }]
+                : [{ account: "expense:losses", amountKobo: amount }, { account, amountKobo: -amount }],
           }),
           db,
         );
-        return poolsPage(req, db, result.posted ? notice("ok", `Recorded ${money(amount)} ${kind === "fund" ? "added to" : "lost from"} the ${network} pool.`) : notice("info", "That entry was already recorded, so it was not booked twice."));
+        return poolsPage(req, db, result.posted ? notice("ok", `Recorded ${money(amount)} ${kind === "fund" ? "added to" : "lost from"} the ${chosen.label}.`) : notice("info", "That entry was already recorded, so it was not booked twice."));
       } catch (err) {
         if (err instanceof UserFacingError) return poolsPage(req, db, notice("problem", err.message), 400);
         throw err;

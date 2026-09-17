@@ -88,6 +88,10 @@ function pairOverrides(): Validator<Record<string, PairOverride>> {
   };
 }
 
+function boolean(): Validator<boolean> {
+  return (value) => (typeof value === "boolean" ? { ok: true, value } : { ok: false, reason: "must be on or off" });
+}
+
 function text(maxLength: number): Validator<string> {
   return (value) =>
     typeof value === "string" && value.length <= maxLength
@@ -217,6 +221,25 @@ export const SETTINGS = {
     fallback: 500_000,
     validate: intBetween(0, 1_000_000_000, "kobo"),
     format: kobo,
+  }),
+  "payout.automatic": define({
+    key: "payout.automatic",
+    group: "Guardrails",
+    label: "Automatic payouts",
+    description:
+      "When on, confirmed transfers are paid out through the top-up provider without a person. When off, every payout is done by hand from the transfer page. Turn it off in a moment of doubt; nothing is lost.",
+    fallback: false,
+    validate: boolean(),
+    format: (v) => (v ? "on" : "off"),
+  }),
+  "payout.max_attempts": define({
+    key: "payout.max_attempts",
+    group: "Guardrails",
+    label: "Automatic payout attempts",
+    description: "How many times the provider is tried for one transfer before it is left for a person. Waits one, five and then fifteen minutes between tries.",
+    fallback: 3,
+    validate: intBetween(1, 10, "count"),
+    format: (v) => `${v}`,
   }),
   "payout.daily_ceiling_kobo": define({
     key: "payout.daily_ceiling_kobo",

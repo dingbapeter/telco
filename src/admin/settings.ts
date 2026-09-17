@@ -6,7 +6,7 @@ import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf } from "./shared.ts";
 
-type Shape = "kobo" | "basis_points" | "minutes" | "per_network_kobo" | "per_network_basis_points" | "per_network_text" | "per_network_longtext" | "json";
+type Shape = "kobo" | "basis_points" | "minutes" | "boolean" | "count" | "per_network_kobo" | "per_network_basis_points" | "per_network_text" | "per_network_longtext" | "json";
 
 // How each setting is shown and typed. Kobo settings are entered in naira.
 const SHAPES: Record<SettingKey, Shape> = {
@@ -22,6 +22,8 @@ const SHAPES: Record<SettingKey, Shape> = {
   "transfer.inbound_window_minutes": "minutes",
   "transfer.inbound_grace_minutes": "minutes",
   "payout.auto_approve_max_kobo": "kobo",
+  "payout.automatic": "boolean",
+  "payout.max_attempts": "count",
   "payout.daily_ceiling_kobo": "per_network_kobo",
   "pool.floor_kobo": "per_network_kobo",
   "network.daily_transfer_cap_kobo": "per_network_kobo",
@@ -61,7 +63,10 @@ export function valueFromForm(key: SettingKey, form: URLSearchParams): unknown {
     case "basis_points":
       return parsePercent(field());
     case "minutes":
+    case "count":
       return parseWhole(field(), label);
+    case "boolean":
+      return field() === "on";
     case "per_network_kobo":
       return Object.fromEntries(NETWORK_CODES.map((c) => [c, parseNairaOrThrow(field(`.${c}`), `${label} for ${c}`)]));
     case "per_network_basis_points":
@@ -93,6 +98,10 @@ function inputs(s: ResolvedSetting<SettingKey>): Html {
       return one("", percentText(v as number), "Percent");
     case "minutes":
       return one("", String(v as number), "Minutes");
+    case "count":
+      return one("", String(v as number), "Number of times");
+    case "boolean":
+      return html`<label for="${s.key}">Setting</label><select id="${s.key}" name="value"><option value="off" ${v ? "" : "selected"}>Off</option><option value="on" ${v ? "selected" : ""}>On</option></select>`;
     case "per_network_kobo":
       return html`<div class="row">${NETWORK_CODES.map((c) => one(`.${c}`, nairaText((v as Record<string, number>)[c]!), `${c}, naira`))}</div>`;
     case "per_network_basis_points":

@@ -47,6 +47,10 @@ export type Transfer = {
   hold_reason: string | null;
   approved_by: string | null;
   approved_at: Date | null;
+  payout_rail: string | null;
+  payout_request_id: string | null;
+  payout_next_attempt_at: Date | null;
+  payout_last_error: string | null;
 };
 
 type Client = pg.PoolClient;
@@ -320,7 +324,15 @@ export type PayoutStart = { started: true; instruction: PayoutInstruction } | { 
 // second approver threshold, the daily ceiling for the destination network,
 // and the pool balance read under lock. The rail that actually sends the
 // airtime takes the returned instruction.
-export async function startPayout(db: Client, actor: string, transferId: number): Promise<PayoutStart> {
+export type PayoutOptions = {
+  // Where the airtime comes from: our SIM's pool for a manual payout, or the
+  // provider's wallet for an automatic one.
+  fundingAccount?: string;
+  rail?: string;
+  requestId?: string;
+};
+
+export async function startPayout(db: Client, actor: string, transferId: number, options: PayoutOptions = {}): Promise<PayoutStart> {
   const { rows } = await db.query<Transfer>("SELECT * FROM transfers WHERE id = $1 FOR UPDATE", [transferId]);
   const t = rows[0];
   if (!t) throw new UserFacingError("no_such_transfer", "There is no transfer with that id.");
@@ -353,20 +365,27 @@ export async function startPayout(db: Client, actor: string, transferId: number)
       reason: `Paying ${formatNaira(payout)} would take today's ${t.to_network} payouts past the ${formatNaira(ceiling)} ceiling. Raise the ceiling in the command centre under Guardrails, or release it tomorrow.`,
     };
   }
-  await lockAccount(db, `pool:${t.to_network}`);
-  const pool = await balance(db, `pool:${t.to_network}`);
-  if (pool < payout) {
+  const funding = options.fundingAccount ?? `pool:${t.to_network}`;
+  await lockAccount(db, funding);
+  const available = await balance(db, funding);
+  if (available < payout) {
     const moved = await claim(db, t.id, t.state, "held", { hold_reason: "pool_too_low" });
-    if (moved) await recordEvent(db, t.id, t.state, "held", actor, { hold_reason: "pool_too_low", pool_kobo: pool });
+    if (moved) await recordEvent(db, t.id, t.state, "held", actor, { hold_reason: "pool_too_low", account: funding, available_kobo: available });
+    const where = funding.startsWith("wallet:") ? `Record money added to the provider wallet under Pools` : `Top up the ${t.to_network} pool`;
     return {
       started: false,
       state: "held",
-      reason: `The ${t.to_network} pool holds ${formatNaira(pool)} and this payout needs ${formatNaira(payout)}. Top up the ${t.to_network} pool, then release the transfer.`,
+      reason: `${funding === `pool:${t.to_network}` ? `The ${t.to_network} pool` : "The provider wallet"} holds ${formatNaira(available)} and this payout needs ${formatNaira(payout)}. ${where}, then release the transfer.`,
     };
   }
-  const moved = await claim(db, t.id, t.state, "paying_out", { payout_attempts: t.payout_attempts + 1 });
+  const moved = await claim(db, t.id, t.state, "paying_out", {
+    payout_attempts: t.payout_attempts + 1,
+    payout_rail: options.rail ?? "manual",
+    payout_request_id: options.requestId ?? null,
+    payout_next_attempt_at: null,
+  });
   if (!moved) return { started: false, state: t.state, reason: "Another process took this transfer first." };
-  await recordEvent(db, t.id, t.state, "paying_out", actor, { attempt: moved.payout_attempts });
+  await recordEvent(db, t.id, t.state, "paying_out", actor, { attempt: moved.payout_attempts, rail: moved.payout_rail, request_id: moved.payout_request_id });
   return {
     started: true,
     instruction: { transferId: t.id, reference: t.reference, network: t.to_network, number: t.recipient_number, amountKobo: payout },
@@ -382,14 +401,26 @@ export async function approvePayout(db: Client, actor: string, transferId: numbe
 
 // The rail says the airtime landed. Books the payout, the fee and the
 // network's share. Calling this twice books nothing twice.
-export async function completePayout(db: Client, actor: string, transferId: number, payoutReference: string): Promise<Transfer | undefined> {
-  const moved = await claim(db, transferId, "paying_out", "completed", { payout_reference: payoutReference, paid_out_at: new Date() });
+export type PaidVia = { account: string; chargedKobo: number; commissionKobo: number };
+
+export async function completePayout(db: Client, actor: string, transferId: number, payoutReference: string, via?: PaidVia): Promise<Transfer | undefined> {
+  const moved = await claim(db, transferId, "paying_out", "completed", { payout_reference: payoutReference, paid_out_at: new Date(), payout_last_error: null });
   if (!moved) return undefined;
   const postings = [
     { account: "owed:senders", amountKobo: moved.received_kobo! },
-    { account: `pool:${moved.to_network}`, amountKobo: -moved.payout_kobo! },
     { account: "revenue:fees", amountKobo: -moved.platform_share_kobo! },
   ];
+  if (via) {
+    // The provider charged its wallet less than the airtime's face value;
+    // the difference is commission they pay us, booked as its own revenue.
+    if (via.chargedKobo + via.commissionKobo !== moved.payout_kobo!) {
+      throw new Error(`Provider figures do not add up for ${moved.reference}: charged ${via.chargedKobo} plus commission ${via.commissionKobo} is not the payout ${moved.payout_kobo}.`);
+    }
+    postings.push({ account: via.account, amountKobo: -via.chargedKobo });
+    if (via.commissionKobo > 0) postings.push({ account: "revenue:provider_commission", amountKobo: -via.commissionKobo });
+  } else {
+    postings.push({ account: `pool:${moved.to_network}`, amountKobo: -moved.payout_kobo! });
+  }
   if (moved.network_share_kobo! > 0) postings.push({ account: `owed:${moved.from_network}`, amountKobo: -moved.network_share_kobo! });
   await postJournal(db, {
     idempotencyKey: `transfer:${moved.id}:payout`,
@@ -401,10 +432,18 @@ export async function completePayout(db: Client, actor: string, transferId: numb
   return moved;
 }
 
-export async function failPayout(db: Client, actor: string, transferId: number, reason: string): Promise<Transfer | undefined> {
-  const moved = await claim(db, transferId, "paying_out", "payout_failed");
+// A failed payout waits one, five, then fifteen minutes before the next
+// automatic try; a person can always retry sooner from the transfer page.
+export const RETRY_WAIT_MINUTES = [1, 5, 15];
+
+export async function failPayout(db: Client, actor: string, transferId: number, reason: string, options: { retryable?: boolean } = {}): Promise<Transfer | undefined> {
+  const current = await getTransfer(db, transferId);
+  if (!current) return undefined;
+  const wait = RETRY_WAIT_MINUTES[Math.min(current.payout_attempts, RETRY_WAIT_MINUTES.length) - 1] ?? RETRY_WAIT_MINUTES[RETRY_WAIT_MINUTES.length - 1]!;
+  const nextAttempt = options.retryable ? new Date(Date.now() + wait * 60_000) : null;
+  const moved = await claim(db, transferId, "paying_out", "payout_failed", { payout_last_error: reason, payout_next_attempt_at: nextAttempt });
   if (!moved) return undefined;
-  await recordEvent(db, moved.id, "paying_out", "payout_failed", actor, { reason });
+  await recordEvent(db, moved.id, "paying_out", "payout_failed", actor, { reason, retry_at: nextAttempt?.toISOString() ?? null });
   return moved;
 }
 

@@ -39,9 +39,10 @@ Airtel, on Glo, on 9mobile.
   transfer by sender number, receiving number and amount, and marks the
   airtime as received. Nothing is ever paid out on the sender's word alone.
 - **Outbound.** We send airtime to the recipient on the destination network
-  from our float there, through a licensed top-up provider that returns a
-  receipt for every transaction, or from our own SIM on that network when
-  the provider is down.
+  through a licensed top-up provider (VTpass first; docs/PROVIDER.md) that
+  returns a receipt for every transaction and takes the cost from money we
+  hold with them, or from our own SIM on that network by hand when the
+  provider is down.
 - **The fee comes out of the airtime.** Send 500 naira on MTN with a 20 naira
   fee and the recipient gets 480 naira on Airtel. No money changes hands and
   no payment provider is needed to launch.

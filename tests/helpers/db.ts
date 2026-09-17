@@ -26,15 +26,17 @@ export async function addReceivingNumber(number: string, network: string, dailyC
   );
 }
 
-// Puts airtime into a pool the way the founder does: from their own pocket.
-export async function fundPool(network: string, kobo: number): Promise<void> {
+// Puts airtime into a pool, or money into a wallet, the way the founder
+// does: from their own pocket. Takes a network code or a full account code.
+export async function fundPool(networkOrAccount: string, kobo: number): Promise<void> {
   const { postJournal } = await import("../../src/ledger.ts");
+  const account = networkOrAccount.includes(":") ? networkOrAccount : `pool:${networkOrAccount}`;
   await as("founder", (c) =>
     postJournal(c, {
-      idempotencyKey: `test-fund:${network}:${kobo}:${Math.random()}`,
-      description: `Founder funds ${network} pool`,
+      idempotencyKey: `test-fund:${account}:${kobo}:${Math.random()}`,
+      description: `Founder funds ${account}`,
       postings: [
-        { account: `pool:${network}`, amountKobo: kobo },
+        { account, amountKobo: kobo },
         { account: "equity:float", amountKobo: -kobo },
       ],
     }),
