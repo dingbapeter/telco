@@ -101,6 +101,30 @@ with cookies and without following redirects. Checked on 17 September 2026.
   that kept the session would have passed. A gap. The test now counts the
   sessions on the server before and after.
 
+## Phone bridge suite (`tests/bridge.test.ts`)
+
+Drives the endpoint the phone app calls, with a device token, and the
+command centre page for phones. Checked on 17 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| The phone's token no longer checked | Red, after the gap below was closed |
+| The same message from a phone recorded twice | Red |
+| The founder's custom reading pattern ignored | Red |
+| An unreadable airtime message dropped instead of kept for a person | Red |
+| The phone's report not recorded, so it looks quiet | Red |
+| The token stored in clear instead of hashed | Red |
+
+Mutation that did not turn the suite red, and what was found: the
+wrong-token test ran with no phones registered, so a server that accepted
+any token still found nothing to accept. A gap. The test now registers a
+phone first.
+
+The Android app itself is compiled by CI on every push (the "Phone bridge
+app" job) and the installable file is published as a build artifact. There
+is no automated test on the phone; docs/BRIDGE.md describes the check a
+person does with a real transfer.
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

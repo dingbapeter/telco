@@ -44,6 +44,12 @@ const MUTATIONS: Mutation[] = [
   { name: "page values not escaped", file: "src/web/html.ts", find: "  return escape(value);\n}", replace: "  return String(value);\n}", suite: "tests/admin.test.ts" },
   { name: "pool form double submit books twice", file: "src/admin/pools.ts", find: "idempotencyKey: `admin:${kind}:${key}`,", replace: "idempotencyKey: `admin:${kind}:${key}:${Date.now()}`,", suite: "tests/admin.test.ts" },
   { name: "checklist green without a receiving number", file: "src/checklist.ts", find: "      n > 0\n        ? { status: \"ok\", title: `${c} has a receiving number`", replace: "      true\n        ? { status: \"ok\", title: `${c} has a receiving number`", suite: "tests/admin.test.ts" },
+  { name: "phone token not checked", file: "src/bridge.ts", find: "WHERE token_hash = $1 AND active\",\n    [hashToken(token)],", replace: "WHERE active\",\n    [],", suite: "tests/bridge.test.ts" },
+  { name: "phone message dedupe removed", file: "src/bridge.ts", find: "VALUES ($1, $2, $3, $4, $5, 'ignored') ON CONFLICT (dedupe_hash) DO NOTHING RETURNING id`,", replace: "VALUES ($1, $2, $3, $4, $5 || clock_timestamp()::text, 'ignored') RETURNING id`,", suite: "tests/bridge.test.ts" },
+  { name: "custom pattern ignored", file: "src/bridge.ts", find: "const parsed = parseNetworkMessage(msg.body, patterns[device.network_code]);", replace: "const parsed = parseNetworkMessage(msg.body, \"\");", suite: "tests/bridge.test.ts" },
+  { name: "unreadable airtime message dropped silently", file: "src/bridge.ts", find: "return finish(looksLikeAirtime ? \"unparsed\" : \"ignored\", null, parsed.problem);", replace: "return finish(\"ignored\", null, parsed.problem);", suite: "tests/bridge.test.ts" },
+  { name: "phone heartbeat not recorded", file: "src/web/bridge.ts", find: "await withActor(`bridge:${device.label}`, (c) => heartbeat(c, device.id, status), db);", replace: "", suite: "tests/bridge.test.ts" },
+  { name: "phone token stored in clear", file: "src/bridge.ts", find: "[label.trim(), code, hashToken(token)],", replace: "[label.trim(), code, token],", suite: "tests/bridge.test.ts" },
   { name: "phone numbers with a country code rejected", file: "src/phone.ts", find: "if (digits.length === 13 && digits.startsWith(\"234\")) local = \"0\" + digits.slice(3);", replace: "if (false) local = digits;", suite: "tests/phone.test.ts" },
 ];
 

@@ -83,3 +83,23 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Every deliberate breakage must turn its suite red
         run: node scripts/mutation-check.ts
+
+  android:
+    name: Phone bridge app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the installable app
+        working-directory: bridge-android
+        run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Publish the app file for the founder to download
+        uses: actions/upload-artifact@v4
+        with:
+          name: telco-bridge-app
+          path: bridge-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

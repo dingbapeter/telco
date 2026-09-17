@@ -246,6 +246,16 @@ export const SETTINGS = {
     validate: perNetwork(intBetween(0, 10_000_000_000, "kobo")),
     format: each(kobo),
   }),
+  "network.inbound_pattern": define({
+    key: "network.inbound_pattern",
+    group: "Networks",
+    label: "How to read the network's airtime received message",
+    description:
+      "A pattern with (?<amount>...) for the naira amount and (?<sender>...) for the sender's number, matched against the text message the network sends when airtime arrives. Empty means the built-in pattern, which looks for the first amount after the word received and the first phone number. Test it on the Phone bridge page before saving.",
+    fallback: emptyPerNetwork,
+    validate: perNetwork(text(400)),
+    format: each((v) => (v === "" ? "built-in" : v)),
+  }),
   "network.transfer_code": define({
     key: "network.transfer_code",
     group: "Networks",

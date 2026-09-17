@@ -15,10 +15,9 @@ Decided. See the "Decided" section and docs/PRODUCT.md.
 
 ### 2. Country, networks, currency and language
 
-Taken as Nigeria, naira, MTN, Airtel, Glo and 9mobile, and English, because
-the founder priced the example in naira and named those networks. Say so if
-any of that is wrong. Number portability means a number's prefix only hints
-at its network, so the sender confirms the network on screen.
+Decided: Nigeria, naira, MTN, Airtel, Glo and 9mobile, English. Number
+portability means a number's prefix only hints at its network, so the
+sender confirms the network on screen.
 
 ### 3. How airtime actually moves, today and at launch
 
@@ -138,6 +137,19 @@ the service under systemd, and Caddy in front for the certificate.
 
 ## Decided
 
+- **17 September 2026. Country and networks.** Nigeria, naira, MTN,
+  Airtel, Glo and 9mobile, English. Confirmed by the founder.
+- **17 September 2026. Fees and limits.** Decided in the command centre by
+  the founder, whenever they choose; the defaults stand until then.
+- **17 September 2026. The phone bridge.** Build it. Built; see
+  docs/BRIDGE.md.
+- **17 September 2026. Hosting.** The founder already has a server and a
+  domain. Still needed from them: the provider, whether Postgres is on the
+  machine, and the domain name, when they are ready to deploy.
+- **17 September 2026. How airtime moves today and the top-up provider.**
+  The founder will come back on this. Until then, outbound payouts are done
+  by hand from the command centre, and the provider adapter is next in line
+  once they name the provider.
 - **17 September 2026. What the product does.** An airtime and data switch
   between Nigerian networks. A sender moves airtime from their network to a
   number on another network and pays a fee set in the command centre. The

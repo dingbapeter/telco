@@ -54,6 +54,7 @@ const NAV: { href: string; label: string }[] = [
   { href: "/admin/inbound", label: "Airtime in" },
   { href: "/admin/pools", label: "Pools" },
   { href: "/admin/numbers", label: "Receiving numbers" },
+  { href: "/admin/bridge", label: "Phone bridge" },
   { href: "/admin/settings", label: "Settings" },
   { href: "/admin/checklist", label: "Launch checklist" },
   { href: "/admin/audit", label: "Audit log" },

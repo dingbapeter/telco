@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { registerAudit } from "./admin/audit.ts";
+import { registerBridgeAdmin } from "./admin/bridge.ts";
 import { registerChecklist } from "./admin/checklist.ts";
 import { registerInbound } from "./admin/inbound.ts";
 import { registerLogin } from "./admin/login.ts";
@@ -8,6 +9,7 @@ import { registerOverview } from "./admin/overview.ts";
 import { registerPools } from "./admin/pools.ts";
 import { registerSettings } from "./admin/settings.ts";
 import { registerTransfers } from "./admin/transfers.ts";
+import { registerBridge } from "./web/bridge.ts";
 import { App } from "./web/http.ts";
 
 export function buildApp(db: pg.Pool, options: { secureCookies: boolean }): App {
@@ -26,6 +28,8 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean }): App 
   registerNumbers(app);
   registerSettings(app);
   registerChecklist(app);
+  registerBridgeAdmin(app);
   registerAudit(app);
+  registerBridge(app);
   return app;
 }

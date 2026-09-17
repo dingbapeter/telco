@@ -4,6 +4,7 @@ import { balance } from "./ledger.ts";
 import { formatNaira } from "./money.ts";
 import { listMigrations } from "./migrate.ts";
 import { getSetting, getSettingValue, NETWORK_CODES, SETTINGS } from "./settings.ts";
+import { STALE_AFTER_MINUTES } from "./admin/bridge.ts";
 
 export type Check = {
   status: "ok" | "bad" | "warn";
@@ -48,6 +49,31 @@ export async function runChecklist(db: pg.Pool): Promise<Check[]> {
         : { status: "bad", title: `${c} has no receiving number`, detail: `Nobody can send airtime from ${c}.`, fix: "Command centre, Receiving numbers: add the number of our SIM on this network." },
     );
   }
+
+  const phones = (
+    await db.query<{ network_code: string; label: string; last_seen_at: Date | null }>(
+      "SELECT network_code, label, last_seen_at FROM bridge_devices WHERE active ORDER BY last_seen_at DESC NULLS LAST",
+    )
+  ).rows;
+  for (const c of NETWORK_CODES) {
+    const hasNumber = (numbers.find((r) => r.network_code === c)?.n ?? 0) > 0;
+    if (!hasNumber) continue;
+    const phone = phones.find((p) => p.network_code === c);
+    const fresh = phone?.last_seen_at && Date.now() - new Date(phone.last_seen_at).getTime() < STALE_AFTER_MINUTES * 60_000;
+    checks.push(
+      !phone
+        ? { status: "bad", title: `${c} has no phone forwarding its messages`, detail: `Airtime arriving on ${c} will only be seen if someone records it by hand.`, fix: "Command centre, Phone bridge: add a phone for this network and set the app up on it as docs/BRIDGE.md describes." }
+        : fresh
+          ? { status: "ok", title: `${c} phone is reporting`, detail: `${phone.label} was heard from at ${phone.last_seen_at!.toISOString()}.` }
+          : { status: "bad", title: `${c} phone has gone quiet`, detail: phone.last_seen_at ? `${phone.label} was last heard from at ${phone.last_seen_at.toISOString()}.` : `${phone.label} has never reported.`, fix: "Check the phone has power, signal and data, the app is open once, and battery saving is off for it. Until then record airtime by hand under Airtime in." },
+    );
+  }
+  const unparsedMessages = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM bridge_messages WHERE outcome = 'unparsed'")).rows[0]!.n;
+  checks.push(
+    unparsedMessages === 0
+      ? { status: "ok", title: "Every message that looked like airtime was read", detail: "The parser understood all of them." }
+      : { status: "warn", title: `${unparsedMessages} message(s) from the phones could not be read`, detail: "They may be airtime arriving that nobody has been paid for.", fix: "Command centre, Phone bridge: read each one, record real ones under Airtime in, and fix the pattern under Settings, Networks." },
+  );
 
   const codes = await getSetting(db, "network.transfer_code");
   for (const c of NETWORK_CODES) {

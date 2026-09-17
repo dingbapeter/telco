@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Telco bridge</string>
+    <string name="server_url">Server address</string>
+    <string name="server_url_hint">https://your.domain</string>
+    <string name="token">Phone token from the command centre</string>
+    <string name="save">Save and connect</string>
+    <string name="grant_sms">Allow reading text messages</string>
+    <string name="battery">Turn off battery saving for this app</string>
+    <string name="send_now">Send now</string>
+    <string name="status_title">Status</string>
+</resources>
