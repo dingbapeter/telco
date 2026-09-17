@@ -182,6 +182,26 @@ Android allows, so orders and refunds on a network could go out without a
 person. **Recommendation:** build it after the first month of real
 orders, once we know how often a person actually has to do this.
 
+### 20. The product's name
+
+Suggested on 17 September 2026, in order of preference: Crossline, then
+Airswitch, Swapline, Crossair. Checked against the web only: Crossline
+turns up one household textiles trademark abroad and nothing in payments
+or telecoms; Anyline is an existing software company and Lineswap is
+already three products, so both are out. Domain registries are blocked
+from the build machine, so the .ng and .com checks and a Nigerian
+trademark search are yours, or your lawyer's, before anything is printed.
+The working name stays Telco in the code until you choose.
+
+### Everything parked for one deployment
+
+The founder will do all of the following at once: the server details and
+deployment (docs/DEPLOY.md), the VTpass account and keys
+(docs/PROVIDER.md), the Paystack account and key (docs/RETAIL.md), the
+phones and their set-up (docs/BRIDGE.md), the transfer and gifting codes
+and caps under Settings, and the name. Nothing in the build waits on any
+of it.
+
 ## Decided
 
 - **17 September 2026. Country and networks.** Nigeria, naira, MTN,

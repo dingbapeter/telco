@@ -159,4 +159,7 @@ network's own SIM once the app is allowed to send.
    Android phone on a weak connection.
 5. Retail top-up, for the pools and for revenue.
 6. Data.
-7. Agents.
+7. The sending phone: the bridge app dialling the network's own codes to
+   send airtime and gift bundles from our SIMs, so payouts from a pool,
+   refunds and pool draining happen without a person.
+8. Agents.
