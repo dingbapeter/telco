@@ -22,13 +22,13 @@ const MUTATIONS: Mutation[] = [
   { name: "audit hook dropped from settings", file: "migrations/0001_foundation.sql", find: "  CREATE TRIGGER settings_audit AFTER INSERT OR UPDATE OR DELETE ON settings\n    FOR EACH ROW EXECUTE FUNCTION audit_row_change('key');", replace: "  CREATE TRIGGER settings_audit AFTER INSERT OR UPDATE OR DELETE ON settings\n    FOR EACH ROW WHEN (false) EXECUTE FUNCTION audit_row_change('key');", suite: "tests/settings.test.ts" },
   { name: "audit actor ignored", file: "migrations/0001_foundation.sql", find: "actor  text := coalesce(nullif(current_setting('app.actor', true), ''), 'system');", replace: "actor  text := 'system';", suite: "tests/settings.test.ts" },
   { name: "state claim no longer conditional", file: "src/transfers.ts", find: "WHERE id = $1 AND state = ANY($3::text[]) RETURNING *", replace: "WHERE id = $1 AND ($3::text[]) IS NOT NULL RETURNING *", suite: "tests/transfers.test.ts" },
-  { name: "duplicate notification processed again", file: "src/transfers.ts", find: "ON CONFLICT (dedupe_hash) DO NOTHING RETURNING id`,\n    [network, receiving, sender, amount, n.rawText, n.source, n.occurredAt ?? null, actor, hash],", replace: "ON CONFLICT (dedupe_hash) DO UPDATE SET recorded_by = EXCLUDED.recorded_by RETURNING id`,\n    [network, receiving, sender, amount, n.rawText, n.source, n.occurredAt ?? null, actor, hash],", suite: "tests/transfers.test.ts" },
+  { name: "duplicate notification processed again", file: "src/transfers.ts", find: "ON CONFLICT (dedupe_hash) DO NOTHING RETURNING id`,", replace: "ON CONFLICT (dedupe_hash) DO UPDATE SET recorded_by = EXCLUDED.recorded_by RETURNING id`,", suite: "tests/transfers.test.ts" },
   { name: "pool balance check removed", file: "src/transfers.ts", find: "  if (available < payout) {", replace: "  if (available < payout && false) {", suite: "tests/transfers.test.ts" },
   { name: "approval threshold ignored", file: "src/transfers.ts", find: "if (payout > autoMax && !t.approved_by) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
   { name: "daily payout ceiling ignored", file: "src/transfers.ts", find: "if (paidToday.rows[0]!.total + payout > ceiling) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
   { name: "sender daily limit ignored", file: "src/transfers.ts", find: "if (usedToday + amount > dailyMax) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
   { name: "expired quotes count against the daily limit", file: "src/transfers.ts", find: "WHERE sender_number = $1 AND created_at >= ${START_OF_TODAY} AND state NOT IN ('expired', 'refunded')`,", replace: "WHERE sender_number = $1 AND created_at >= ${START_OF_TODAY}`,", suite: "tests/transfers.test.ts" },
-  { name: "late airtime in the grace period not matched", file: "src/transfers.ts", find: "AND state IN ('awaiting_inbound', 'expired')\n       AND expires_at + make_interval(mins => $5) > now()", replace: "AND state IN ('awaiting_inbound')\n       AND expires_at + make_interval(mins => $5) > now()", suite: "tests/transfers.test.ts" },
+  { name: "late airtime in the grace period not matched", file: "src/transfers.ts", find: "AND state IN ('awaiting_inbound', 'expired')\n           AND expires_at + make_interval(mins => $5) > now()", replace: "AND state IN ('awaiting_inbound')\n           AND expires_at + make_interval(mins => $5) > now()", suite: "tests/transfers.test.ts" },
   { name: "grace period never ends", file: "src/transfers.ts", find: "AND expires_at + make_interval(mins => $5) > now()", replace: "AND ($5::int IS NOT NULL)", suite: "tests/transfers.test.ts" },
   { name: "fee not recomputed on the amount that arrived", file: "src/transfers.ts", find: "return { fee: computeFee(amount, await loadFeeRule(db, t.from_network, t.to_network)), holdReason: null };", replace: "return { fee: computeFee(t.requested_kobo, await loadFeeRule(db, t.from_network, t.to_network)), holdReason: null };", suite: "tests/transfers.test.ts" },
   { name: "network share never booked", file: "src/transfers.ts", find: "if (moved.network_share_kobo! > 0) postings.push", replace: "if (false) postings.push", suite: "tests/transfers.test.ts" },
@@ -112,9 +112,10 @@ for (const m of MUTATIONS) {
 }
 for (const m of MUTATIONS) {
   // Every file must be back exactly as it was, whatever else happened. A
-  // mutation that did not apply is reported below, not here.
-  const applied = results.find((r) => r.name === m.name)?.outcome !== "did not apply";
-  if (applied && !readFileSync(m.file, "utf8").includes(m.find)) throw new Error(`${m.file} was not restored after "${m.name}"`);
+  // mutation that did not run, or did not apply, is not checked here.
+  const outcome = results.find((r) => r.name === m.name)?.outcome;
+  if (outcome === undefined || outcome === "did not apply") continue;
+  if (!readFileSync(m.file, "utf8").includes(m.find)) throw new Error(`${m.file} was not restored after "${m.name}"`);
 }
 
 const survivors = results.filter((r) => r.outcome !== "red");
