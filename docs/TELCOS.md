@@ -51,3 +51,35 @@ founder wants it to be worth, and for the fee split to become real money.
 - The settlement statement per network and the recording of payments.
 - The state machine, which does not care whether the inbound leg came from
   a dial code, a phone's message, or an aggregator's charge.
+
+## Optasia and the airtime credit market, for the discussion to come
+
+Looked at on 17 September 2026 at the founder's request. Optasia, formerly
+Channel VAS, is the engine behind "borrow airtime" on most African
+networks: MTN's XtraTime and Airtel's Extra Credit in Nigeria among them.
+The network advances its own airtime, at almost no cost to itself, to a
+subscriber Optasia's scoring says is good for it. The subscriber pays a
+service fee taken up front (15 percent on MTN Nigeria: borrow 100 naira,
+receive 85) and the advance plus fee is deducted from the next recharge.
+The network keeps the customer and does the collecting; Optasia runs the
+engine and takes an agreed share of the fee, reported at about a quarter.
+The group listed in Johannesburg in November 2025, made about 265 million
+dollars in 2025, and now earns most of its money from cash microloans on
+the same rails, with airtime credit as the way in.
+
+In Nigeria in 2026 the model met its regulator. New consumer lending rules
+from the Federal Competition and Consumer Protection Commission led to a
+two-month suspension of airtime credit on every network, court cases, and
+the approval of nine Nigerian firms to offer airtime and data advances,
+ending a twelve-year exclusivity. Nigeria fell from about 14 percent of
+Optasia's revenue to under 4 percent in one quarter.
+
+What it means for us, in short: the shape of our pitch to the networks is
+proven (the network keeps the customer and the collection, the partner
+brings the engine, the fee is shared); the nine approved Nigerian firms
+are the most realistic door in, because they hold or are getting the
+network connections we need and lack a product like ours; the 15 percent
+people already pay to borrow airtime says our transfer fee has room; and
+lending ourselves is not for now, because without a network's deduction
+from the next recharge there is no way to collect, and the lending rules
+would make us a regulated lender carrying credit risk on a thin fee.

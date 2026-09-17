@@ -163,6 +163,10 @@ would consume the fee. **Recommendation:** operate under an aggregator's
 licence first, approach the aggregator with three months of real volume
 from the rails, and hold the line that this is a transfer product.
 
+The founder wants to revisit all of this properly. Optasia and the airtime
+credit market are written up at the end of docs/TELCOS.md for that
+discussion.
+
 ### 18. Payment provider for retail
 
 Paystack is built in on my recommendation: bank transfer, card and USSD,
