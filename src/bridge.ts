@@ -2,9 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 import type pg from "pg";
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
+import { parseSizeMb } from "./bundles.ts";
 import { parseNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
-import { getSettingValue, NETWORK_CODES, type NetworkCode } from "./settings.ts";
+import { getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
 import { recordInbound, type InboundOutcome } from "./transfers.ts";
 
 export type Device = {
@@ -62,7 +63,7 @@ export async function listDevices(db: Queryable): Promise<Device[]> {
 
 // The built-in reading of a network's message: the first amount after the
 // word "received", and the first Nigerian phone number that is not our own.
-const BUILT_IN = /receiv\w*\D{0,40}?(?:N|NGN|₦)?\s*(?<amount>\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)[\s\S]*?(?<sender>\+?(?:234|0)(?:[\s-]?\d){10})/i;
+const BUILT_IN = /receiv\w*\D{0,40}?(?:N|NGN|₦)?\s*(?<amount>\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?!\s*[GM]B)[\s\S]*?(?<sender>\+?(?:234|0)(?:[\s-]?\d){10})/i;
 
 export type Parsed = { amountKobo: number; senderNumber: string } | { problem: string };
 
@@ -87,6 +88,35 @@ export function parseNetworkMessage(body: string, pattern: string): Parsed {
   const senderNumber = normaliseNigerianNumber(senderText);
   if (!senderNumber) return { problem: `"${senderText}" is not a Nigerian mobile number.` };
   return { amountKobo, senderNumber };
+}
+
+// The built-in reading of a "you have received data" message: the first
+// size like 1GB or 500MB near a word for receiving, and the sender's number.
+const BUILT_IN_DATA = /(?:receiv|gift|shar|sent you)[\s\S]{0,60}?(?<size>\d+(?:\.\d+)?\s*(?:GB|MB))[\s\S]*?(?<sender>\+?(?:234|0)(?:[\s-]?\d){10})/i;
+
+export type ParsedData = { sizeMb: number; senderNumber: string } | { problem: string };
+
+export function parseDataMessage(body: string, pattern: string): ParsedData {
+  let re: RegExp;
+  if (pattern.trim() === "") re = BUILT_IN_DATA;
+  else {
+    try {
+      re = new RegExp(pattern, "i");
+    } catch (err) {
+      return { problem: `The data pattern is not valid: ${(err as Error).message}` };
+    }
+  }
+  const m = re.exec(body.replace(/\s+/g, " "));
+  if (!m || !m.groups) return { problem: "The data pattern did not match the message." };
+  const sizeText = m.groups["size"];
+  const senderText = m.groups["sender"];
+  if (!sizeText) return { problem: "The data pattern matched but has no (?<size>...) group." };
+  if (!senderText) return { problem: "The data pattern matched but has no (?<sender>...) group." };
+  const sizeMb = parseSizeMb(sizeText);
+  if (!sizeMb) return { problem: `"${sizeText}" is not a data size like 1GB or 500MB.` };
+  const senderNumber = normaliseNigerianNumber(senderText);
+  if (!senderNumber) return { problem: `"${senderText}" is not a Nigerian mobile number.` };
+  return { sizeMb, senderNumber };
 }
 
 export type IncomingMessage = { from: string; body: string; receivedAt?: string | undefined };
@@ -116,21 +146,33 @@ export async function ingestMessage(db: pg.PoolClient, device: Device, receiving
   };
 
   if (!receivingNumber) return finish("unparsed", null, `No active receiving number on ${device.network_code} is known for this phone. Add one under Receiving numbers.`);
-  const patterns = await getSettingValue(db, "network.inbound_pattern");
-  const parsed = parseNetworkMessage(msg.body, patterns[device.network_code]);
+  const [patterns, dataPatterns] = await getSettingValues(db, ["network.inbound_pattern", "network.data_inbound_pattern"] as const);
+  // A message that names a data size is read as data first, so "1GB" is
+  // never taken for one naira.
+  const mentionsData = /\d\s*[GM]B/i.test(msg.body);
+  const parsed = mentionsData ? { problem: "The message names a data size, so it was read as data." } : parseNetworkMessage(msg.body, patterns[device.network_code]);
+  let inbound: { senderNumber: string; amountKobo: number; dataMb?: number };
   if ("problem" in parsed) {
-    // Most messages a phone gets are not airtime arriving. Only keep the
-    // ones that look like they might be, so a person is not buried.
-    const looksLikeAirtime = /receiv|credit|airtime|transfer/i.test(msg.body);
-    return finish(looksLikeAirtime ? "unparsed" : "ignored", null, parsed.problem);
-  }
+    // Not airtime. Perhaps gifted data, which is worth its catalogue price.
+    const data = parseDataMessage(msg.body, dataPatterns[device.network_code]);
+    if ("problem" in data) {
+      // Most messages a phone gets are neither. Only keep the ones that
+      // look like they might be, so a person is not buried.
+      const looksLikeValue = /receiv|credit|airtime|transfer|gift|data|MB|GB/i.test(msg.body);
+      return finish(looksLikeValue ? "unparsed" : "ignored", null, `${parsed.problem} ${data.problem}`);
+    }
+    const bundle = (await db.query<{ price_kobo: number }>("SELECT price_kobo FROM data_bundles WHERE network_code = $1 AND size_mb = $2 AND giftable AND active ORDER BY price_kobo LIMIT 1", [device.network_code, data.sizeMb])).rows[0];
+    if (!bundle) return finish("unparsed", null, `Read as ${data.sizeMb}MB of data from ${data.senderNumber}, but no giftable ${device.network_code} bundle of that size is in the catalogue, so it cannot be valued. Add one under Data bundles.`);
+    inbound = { senderNumber: data.senderNumber, amountKobo: bundle.price_kobo, dataMb: data.sizeMb };
+  } else inbound = { senderNumber: parsed.senderNumber, amountKobo: parsed.amountKobo };
   const outcome: InboundOutcome = await recordInbound(db, `bridge:${device.label}`, {
     networkCode: device.network_code,
     receivingNumber,
-    senderNumber: parsed.senderNumber,
-    amountKobo: parsed.amountKobo,
+    senderNumber: inbound.senderNumber,
+    amountKobo: inbound.amountKobo,
     rawText: msg.body,
     source: "bridge",
+    dataMb: inbound.dataMb,
     ...(validDate ? { occurredAt: validDate } : {}),
   });
   const ref = "transfer" in outcome ? outcome.transfer.reference : undefined;

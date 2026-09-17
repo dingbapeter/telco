@@ -14,6 +14,7 @@ import {
   startRefund,
   type Transfer,
 } from "../transfers.ts";
+import { getBundle } from "../bundles.ts";
 import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf, money, pager, requiredField, stateBadge, when } from "./shared.ts";
@@ -75,7 +76,7 @@ async function listPage(req: Request, db: pg.Pool): Promise<string> {
 // What a person can do to a transfer in its current state, each a real
 // action on the state machine. The manual rails live here: a person sends
 // the airtime from our SIM and records the result.
-function actions(req: Request, t: Transfer): Html {
+function actions(req: Request, t: Transfer, outBundle?: { name: string } | undefined): Html {
   const form = (action: string, label: string, cls = "", extra: Html = html``) =>
     html`<form method="post" action="/admin/transfers/${t.id}/${action}" class="panel">${csrf(req)}${extra}<button type="submit" class="${cls}">${label}</button></form>`;
   const out: Html[] = [];
@@ -100,7 +101,7 @@ function actions(req: Request, t: Transfer): Html {
   }
   if (t.state === "paying_out") {
     out.push(html`<div class="panel">
-      <p><strong>Send ${money(t.payout_kobo)} of ${t.to_network} airtime to ${t.recipient_number}</strong> from our ${t.to_network} SIM, then record the result here.</p>
+      <p><strong>${t.out_kind === "data" ? `Gift the bundle ${outBundle?.name ?? ""} to ${t.recipient_number}` : `Send ${money(t.payout_kobo)} of ${t.to_network} airtime to ${t.recipient_number}`}</strong> from our ${t.to_network} SIM, then record the result here.</p>
       <form method="post" action="/admin/transfers/${t.id}/payout/done">${csrf(req)}
         <label for="ref">Reference from the network's confirmation message</label><input id="ref" name="reference" type="text" required>
         <button type="submit">Airtime sent</button>
@@ -141,10 +142,14 @@ async function detailPage(req: Request, db: pg.Pool, id: number, message?: Html)
     getSettingValue(db, "network.transfer_code"),
   ]);
   const dial = code[t.from_network];
+  const inBundle = t.in_bundle_id ? await getBundle(db, t.in_bundle_id) : undefined;
+  const outBundle = t.out_bundle_id ? await getBundle(db, t.out_bundle_id) : undefined;
   const body = html`<h1>${t.reference} ${stateBadge(t.state)}</h1>
     ${message ?? ""}
     <dl>
-      <dt>Route</dt><dd>${t.from_network} to ${t.to_network}</dd>
+      <dt>Route</dt><dd>${t.from_network} ${t.in_kind === "data" ? "data" : "airtime"} to ${t.to_network} ${t.out_kind === "data" ? "data" : "airtime"}</dd>
+      ${inBundle ? html`<dt>Sender gifts</dt><dd>${inBundle.name}, valued at ${money(inBundle.price_kobo)}</dd>` : ""}
+      ${outBundle ? html`<dt>Recipient gets</dt><dd>${outBundle.name} (${money(outBundle.price_kobo)})</dd>` : ""}
       <dt>Sender</dt><dd>${t.sender_number}</dd>
       <dt>Recipient</dt><dd>${t.recipient_number}</dd>
       <dt>Our receiving number</dt><dd>${t.receiving_number}</dd>
@@ -163,7 +168,7 @@ async function detailPage(req: Request, db: pg.Pool, id: number, message?: Html)
         ? html`<dt>Sender was told to dial</dt><dd>${dial ? dial.replace("{amount}", String(t.requested_kobo / 100)).replace("{number}", t.receiving_number).replace("{pin}", "PIN") : html`<span class="muted">no transfer code set for ${t.from_network} in Settings</span>`}</dd>`
         : ""}
     </dl>
-    ${actions(req, t)}
+    ${actions(req, t, outBundle)}
     <h2>Airtime received</h2>
     ${notifications.rows.length === 0
       ? html`<p class="muted">None yet.</p>`

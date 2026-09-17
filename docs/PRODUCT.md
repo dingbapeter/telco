@@ -91,8 +91,7 @@ that are about the networks, not about us:
   network, and only from some plans. Our SIM then holds data it can share on
   but not sell as airtime, so the data pool balances differently.
 
-Airtime first proves the rails, the matching and the pools. Data follows on
-the same core.
+Built as described, on the same core: see docs/DATA.md.
 
 ## Risks, stated plainly
 

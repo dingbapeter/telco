@@ -51,8 +51,15 @@ export async function runPayoutCycle(db: pg.Pool, rail: PayoutRail, now = new Da
       report.skipped.push(`${t.reference}: ${start.reason}`);
       continue;
     }
+    const bundle = start.instruction.bundle;
+    if (bundle && !bundle.provider_variation_code) {
+      // The provider does not know this bundle; a person delivers it from our SIM.
+      await withActor(ACTOR, (c) => failPayout(c, ACTOR, t.id, `${bundle.name} has no provider code in the catalogue, so it must be delivered by hand from our ${bundle.network_code} SIM, or given a code under Data bundles.`, { retryable: false }), db);
+      report.failed += 1;
+      continue;
+    }
     report.sent += 1;
-    const result = await rail.send({ requestId, network: start.instruction.network, number: start.instruction.number, amountKobo: start.instruction.amountKobo });
+    const result = await rail.send({ requestId, network: start.instruction.network, number: start.instruction.number, amountKobo: start.instruction.amountKobo, bundle: bundle ? { variationCode: bundle.provider_variation_code!, name: bundle.name } : undefined });
     await settle(db, rail, t.id, result, report);
   }
   return report;
@@ -118,8 +125,14 @@ export async function runDeliveryCycle(db: pg.Pool, rail: PayoutRail, now = new 
       report.skipped.push(`${o.reference}: ${start.reason}`);
       continue;
     }
+    const bundle = start.bundle;
+    if (bundle && !bundle.provider_variation_code) {
+      await withActor(ACTOR, (c) => failDelivery(c, ACTOR, o.id, `${bundle.name} has no provider code in the catalogue, so it must be delivered by hand from our ${bundle.network_code} SIM, or given a code under Data bundles.`, { retryable: false }), db);
+      report.failed += 1;
+      continue;
+    }
     report.sent += 1;
-    await settleOrder(db, rail, o.id, await rail.send({ requestId, network: start.network, number: start.number, amountKobo: start.amountKobo }), report);
+    await settleOrder(db, rail, o.id, await rail.send({ requestId, network: start.network, number: start.number, amountKobo: start.amountKobo, bundle: bundle ? { variationCode: bundle.provider_variation_code!, name: bundle.name } : undefined }), report);
   }
   return report;
 }

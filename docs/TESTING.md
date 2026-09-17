@@ -179,6 +179,32 @@ page. Checked on 17 September 2026, all nine breakages caught first time.
 | Paystack's fee not booked | Red |
 | Buyer numbers shown in full on the order page | Red |
 
+## Data suite (`tests/data.test.ts`)
+
+Drives bundles received, bundles sent, the bridge reading a data message,
+the catalogue fetch from the provider stand-in, and bundle orders. Checked
+on 17 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| A bundle transfer accepting a different amount than quoted | Red |
+| The required amount one naira short of covering the bundle | Red |
+| Gifted data booked in the airtime pool | Red |
+| Airtime matched to a transfer waiting for gifted data | Red |
+| A bundle sent to the provider as if it were airtime | Red |
+| A bundle the provider does not know sent anyway | Red |
+| A data message read as one naira of airtime, with both defences off | Red, see below |
+| A hand-set bundle price overwritten by a provider fetch | Red |
+| A bundle that cannot be gifted offered as the thing sent | Red |
+
+### Mutation that did not turn the data suite red, and what was found
+
+Disabling the "read as data first when the message names a size" check
+left the suite green. Investigated before changing anything: the airtime
+pattern itself also refuses an amount followed by GB or MB, so the message
+still fell through to the data reader. Two independent defences, both
+kept. The mutation now switches both off together, and the suite goes red.
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

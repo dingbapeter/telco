@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { parseSizeMb } from "../bundles.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { NETWORK_CODES } from "../settings.ts";
@@ -36,7 +37,8 @@ async function inboundPage(req: Request, db: pg.Pool, message?: Html, status = 2
       </div>
       <div class="row">
         <div><label for="sender">Sender's number <span class="hint">as shown in the message</span></label><input id="sender" name="sender" type="text" inputmode="tel" required></div>
-        <div><label for="amount">Amount in naira</label><input id="amount" name="amount" type="text" inputmode="decimal" required></div>
+        <div><label for="amount">Airtime amount in naira <span class="hint">leave empty for gifted data</span></label><input id="amount" name="amount" type="text" inputmode="decimal"></div>
+        <div><label for="data">Gifted data size <span class="hint">like 1GB, only for data</span></label><input id="data" name="data" type="text"></div>
       </div>
       <label for="raw">The network's message, word for word</label><textarea id="raw" name="raw" required></textarea>
       <button type="submit">Record it</button>
@@ -70,14 +72,26 @@ export function registerInbound(app: App): void {
 
   app.post("/admin/inbound", async (req, db) => {
     try {
+      const network = requiredField(req.form, "network", "Network");
+      const dataText = (req.form.get("data") ?? "").trim();
+      let amountKobo: number;
+      let dataMb: number | undefined;
+      if (dataText !== "") {
+        dataMb = parseSizeMb(dataText);
+        if (!dataMb) throw new UserFacingError("bad_size", "Write the data size like 1GB or 500MB.");
+        const bundle = (await db.query<{ price_kobo: number }>("SELECT price_kobo FROM data_bundles WHERE network_code = $1 AND size_mb = $2 AND giftable AND active ORDER BY price_kobo LIMIT 1", [network.toUpperCase(), dataMb])).rows[0];
+        if (!bundle) throw new UserFacingError("no_bundle", `No giftable ${network.toUpperCase()} bundle of ${dataText} is in the catalogue, so it cannot be valued. Add one under Data bundles first.`);
+        amountKobo = bundle.price_kobo;
+      } else amountKobo = nairaField(req.form, "amount", "Airtime amount");
       const outcome = await withActor(actor(req.admin), (c) =>
         recordInbound(c, actor(req.admin), {
-          networkCode: requiredField(req.form, "network", "Network"),
+          networkCode: network,
           receivingNumber: requiredField(req.form, "receiving", "Our number"),
           senderNumber: requiredField(req.form, "sender", "Sender's number"),
-          amountKobo: nairaField(req.form, "amount", "Amount"),
+          amountKobo,
           rawText: requiredField(req.form, "raw", "The network's message"),
           source: "manual",
+          dataMb,
         }),
         db,
       );

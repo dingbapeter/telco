@@ -63,3 +63,32 @@ export async function loadFeeRule(db: Queryable, from: NetworkCode, to: NetworkC
     networkShareBasisPoints: shares[from],
   };
 }
+
+// The smallest whole-naira amount a sender must send so that, after the
+// fee, the payout covers a price. Fees only grow with the amount, so a
+// short walk upward from the arithmetic guess finds it.
+export function requiredAmountFor(priceKobo: number, rule: FeeRule): number {
+  assertKobo(priceKobo);
+  const fraction = 1 - rule.percentBasisPoints / 10_000;
+  let amount = Math.ceil((priceKobo + rule.flatKobo) / fraction / 100) * 100;
+  amount = Math.max(amount, Math.ceil((priceKobo + rule.floorKobo) / 100) * 100);
+  for (let i = 0; i < 1_000; i++) {
+    try {
+      if (computeFee(amount, rule).payoutKobo >= priceKobo) break;
+    } catch {
+      // The fee swallowed the amount; keep going up.
+    }
+    amount += 100;
+  }
+  // Come back down while the payout still covers the price, so the sender
+  // never pays a naira more than needed.
+  while (amount > 100) {
+    try {
+      if (computeFee(amount - 100, rule).payoutKobo < priceKobo) break;
+    } catch {
+      break;
+    }
+    amount -= 100;
+  }
+  return amount;
+}

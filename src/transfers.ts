@@ -2,7 +2,8 @@ import { createHash, randomInt } from "node:crypto";
 import type pg from "pg";
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
-import { computeFee, loadFeeRule, type FeeBreakdown } from "./fees.ts";
+import { activeBundle, describeBundle, type Bundle } from "./bundles.ts";
+import { computeFee, loadFeeRule, requiredAmountFor, type FeeBreakdown, type FeeRule } from "./fees.ts";
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { assertKobo, formatNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
@@ -51,7 +52,17 @@ export type Transfer = {
   payout_request_id: string | null;
   payout_next_attempt_at: Date | null;
   payout_last_error: string | null;
+  in_kind: "airtime" | "data";
+  in_bundle_id: number | null;
+  out_kind: "airtime" | "data";
+  out_bundle_id: number | null;
 };
+
+// Where value received lands: airtime in the network's pool, gifted data in
+// its data pool at catalogue value.
+export function inboundAccount(t: Pick<Transfer, "in_kind" | "from_network">): string {
+  return t.in_kind === "data" ? `datapool:${t.from_network}` : `pool:${t.from_network}`;
+}
 
 type Client = pg.PoolClient;
 
@@ -123,13 +134,28 @@ export type QuoteInput = {
   toNetwork: string;
   senderNumber: string;
   recipientNumber: string;
-  amountKobo: number;
+  // The airtime amount to send. Not needed when a bundle is being sent (its
+  // catalogue value is the amount) or when a bundle is to be received (the
+  // amount to send is worked out from its price).
+  amountKobo?: number | undefined;
+  inBundleId?: number | undefined;
+  outBundleId?: number | undefined;
 };
 
-// Creates a transfer waiting for airtime. Everything the sender is told comes
-// from here: how much to send, to which number, what the recipient will get,
-// and by when.
-export async function quoteTransfer(db: Client, actor: string, input: QuoteInput): Promise<{ transfer: Transfer; fee: FeeBreakdown }> {
+// Works out, for a transfer whose payout must be exactly a bundle's price,
+// the fee and shares from what was received: the rule's fee, the network's
+// share on that, and whatever is left over above the price is ours too.
+export function settleForBundle(receivedKobo: number, priceKobo: number, rule: FeeRule): FeeBreakdown {
+  const base = computeFee(receivedKobo, rule);
+  if (base.payoutKobo < priceKobo) throw new UserFacingError("not_enough_for_bundle", `${formatNaira(receivedKobo)} does not cover the bundle after the fee.`);
+  const fee = receivedKobo - priceKobo;
+  return { amountKobo: receivedKobo, feeKobo: fee, networkShareKobo: base.networkShareKobo, platformShareKobo: fee - base.networkShareKobo, payoutKobo: priceKobo };
+}
+
+// Creates a transfer waiting for airtime or data. Everything the sender is
+// told comes from here: what to send, to which number, what the recipient
+// will get, and by when.
+export async function quoteTransfer(db: Client, actor: string, input: QuoteInput): Promise<{ transfer: Transfer; fee: FeeBreakdown; inBundle?: Bundle; outBundle?: Bundle }> {
   const from = input.fromNetwork.toUpperCase();
   const to = input.toNetwork.toUpperCase();
   if (!isNetwork(from) || !isNetwork(to)) {
@@ -150,7 +176,17 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
   if (!sender) throw new UserFacingError("bad_sender_number", "The sending number should be a Nigerian mobile number like 08031234567.");
   if (!recipient) throw new UserFacingError("bad_recipient_number", "The receiving number should be a Nigerian mobile number like 08021234567.");
 
-  const amount = assertKobo(input.amountKobo);
+  const inBundle = input.inBundleId ? await activeBundle(db, input.inBundleId, from) : undefined;
+  if (inBundle && !inBundle.giftable) throw new UserFacingError("not_giftable", `${describeBundle(inBundle)} cannot be gifted to us on ${from}. Choose a bundle marked as giftable.`);
+  const outBundle = input.outBundleId ? await activeBundle(db, input.outBundleId, to) : undefined;
+  const rule = await loadFeeRule(db, from, to);
+  let amount: number;
+  if (inBundle) amount = inBundle.price_kobo;
+  else if (outBundle) amount = requiredAmountFor(outBundle.price_kobo, rule);
+  else {
+    if (input.amountKobo === undefined) throw new UserFacingError("no_amount", "Enter the amount of airtime to move.");
+    amount = assertKobo(input.amountKobo);
+  }
   const [min, max, dailyMax, caps, windowMinutes] = await getSettingValues(db, [
     "transfer.min_kobo",
     "transfer.max_kobo",
@@ -158,10 +194,10 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
     "network.daily_transfer_cap_kobo",
     "transfer.inbound_window_minutes",
   ] as const);
-  if (amount < min) throw new UserFacingError("below_minimum", `The smallest transfer is ${formatNaira(min)}.`);
-  if (amount > max) throw new UserFacingError("above_maximum", `The largest transfer is ${formatNaira(max)}. Send it in more than one transfer.`);
+  if (amount < min && !inBundle) throw new UserFacingError("below_minimum", `The smallest transfer is ${formatNaira(min)}.`);
+  if (amount > max) throw new UserFacingError("above_maximum", `The largest transfer is ${formatNaira(max)}. ${outBundle ? "Choose a smaller bundle." : "Send it in more than one transfer."}`);
   const networkCap = caps[from];
-  if (networkCap > 0 && amount > networkCap) {
+  if (!inBundle && networkCap > 0 && amount > networkCap) {
     throw new UserFacingError(
       "above_network_cap",
       `${from} only lets a subscriber transfer ${formatNaira(networkCap)} in a day, so it would refuse this. Send ${formatNaira(networkCap)} or less.`,
@@ -178,7 +214,15 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
     throw new UserFacingError("daily_limit", `This number can move ${formatNaira(dailyMax)} a day and has ${formatNaira(left)} left today.`);
   }
 
-  const fee = computeFee(amount, await loadFeeRule(db, from, to));
+  let fee: FeeBreakdown;
+  try {
+    fee = outBundle ? settleForBundle(amount, outBundle.price_kobo, rule) : computeFee(amount, rule);
+  } catch (err) {
+    if (err instanceof UserFacingError && err.code === "not_enough_for_bundle" && inBundle && outBundle) {
+      throw new UserFacingError("bundle_too_small", `${describeBundle(inBundle)} is worth ${formatNaira(inBundle.price_kobo)}, which does not cover ${describeBundle(outBundle)} plus the fee. Choose a smaller bundle to receive.`);
+    }
+    throw err;
+  }
 
   // The receiving number with the most room left today takes the transfer.
   const receiving = await db.query<{ number: string }>(
@@ -201,13 +245,34 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
 
   const { rows } = await db.query<Transfer>(
     `INSERT INTO transfers (reference, state, from_network, to_network, sender_number, recipient_number, receiving_number,
-       requested_kobo, quoted_fee_kobo, quoted_payout_kobo, expires_at)
-     VALUES ($1, 'awaiting_inbound', $2, $3, $4, $5, $6, $7, $8, $9, now() + make_interval(mins => $10)) RETURNING *`,
-    [newReference(), from, to, sender, recipient, receivingNumber, amount, fee.feeKobo, fee.payoutKobo, windowMinutes],
+       requested_kobo, quoted_fee_kobo, quoted_payout_kobo, expires_at, in_kind, in_bundle_id, out_kind, out_bundle_id)
+     VALUES ($1, 'awaiting_inbound', $2, $3, $4, $5, $6, $7, $8, $9, now() + make_interval(mins => $10), $11, $12, $13, $14) RETURNING *`,
+    [newReference(), from, to, sender, recipient, receivingNumber, amount, fee.feeKobo, fee.payoutKobo, windowMinutes, inBundle ? "data" : "airtime", inBundle?.id ?? null, outBundle ? "data" : "airtime", outBundle?.id ?? null],
   );
   const transfer = rows[0]!;
-  await recordEvent(db, transfer.id, null, "awaiting_inbound", actor, { requested_kobo: amount, quoted_fee_kobo: fee.feeKobo });
-  return { transfer, fee };
+  await recordEvent(db, transfer.id, null, "awaiting_inbound", actor, { requested_kobo: amount, quoted_fee_kobo: fee.feeKobo, in_bundle: inBundle?.code ?? null, out_bundle: outBundle?.code ?? null });
+  return { transfer, fee, ...(inBundle ? { inBundle } : {}), ...(outBundle ? { outBundle } : {}) };
+}
+
+// The amounts to record when value has arrived for a transfer: the fee and
+// shares, the payout, or the reason it must wait for a person.
+async function settlement(db: Queryable, t: Transfer, amount: number): Promise<{ fee: FeeBreakdown | null; holdReason: string | null }> {
+  const [min, max] = await getSettingValues(db, ["transfer.min_kobo", "transfer.max_kobo"] as const);
+  if (t.out_kind === "data") {
+    // A bundle costs what it costs: the sender was told the exact amount.
+    if (amount !== t.requested_kobo) return { fee: null, holdReason: amount < t.requested_kobo ? "amount_below_required" : "amount_above_required" };
+    const outBundle = await activeBundle(db, t.out_bundle_id!).catch(() => undefined);
+    if (!outBundle) return { fee: null, holdReason: "bundle_withdrawn" };
+    return { fee: settleForBundle(amount, outBundle.price_kobo, await loadFeeRule(db, t.from_network, t.to_network)), holdReason: null };
+  }
+  if (t.in_kind !== "data" && amount < min) return { fee: null, holdReason: "amount_below_minimum" };
+  if (amount > max) return { fee: null, holdReason: "amount_above_maximum" };
+  try {
+    return { fee: computeFee(amount, await loadFeeRule(db, t.from_network, t.to_network)), holdReason: null };
+  } catch (err) {
+    if (err instanceof UserFacingError && err.code === "fee_exceeds_amount") return { fee: null, holdReason: "fee_exceeds_amount" };
+    throw err;
+  }
 }
 
 export type InboundNotification = {
@@ -218,6 +283,9 @@ export type InboundNotification = {
   rawText: string;
   source: "bridge" | "manual";
   occurredAt?: Date;
+  // Set when what arrived was gifted data: the size, with amountKobo being
+  // the catalogue value of a bundle of that size.
+  dataMb?: number | undefined;
 };
 
 export type InboundOutcome =
@@ -243,9 +311,9 @@ export async function recordInbound(db: Client, actor: string, n: InboundNotific
     .update([network, receiving, sender, amount, n.rawText.trim(), occurred].join("|"))
     .digest("hex");
   const inserted = await db.query<{ id: number }>(
-    `INSERT INTO inbound_notifications (network_code, receiving_number, sender_number, amount_kobo, raw_text, source, occurred_at, recorded_by, dedupe_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (dedupe_hash) DO NOTHING RETURNING id`,
-    [network, receiving, sender, amount, n.rawText, n.source, n.occurredAt ?? null, actor, hash],
+    `INSERT INTO inbound_notifications (network_code, receiving_number, sender_number, amount_kobo, raw_text, source, occurred_at, recorded_by, dedupe_hash, data_mb)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (dedupe_hash) DO NOTHING RETURNING id`,
+    [network, receiving, sender, amount, n.rawText, n.source, n.occurredAt ?? null, actor, hash, n.dataMb ?? null],
   );
   const insertedRow = inserted.rows[0];
   if (!insertedRow) {
@@ -255,35 +323,39 @@ export async function recordInbound(db: Client, actor: string, n: InboundNotific
   const notificationId = insertedRow.id;
 
   const grace = await getSettingValue(db, "transfer.inbound_grace_minutes");
-  // Prefer a waiting transfer for exactly this amount, then the oldest.
-  const candidates = await db.query<Transfer>(
-    `SELECT * FROM transfers
-     WHERE from_network = $1 AND receiving_number = $2 AND sender_number = $3
-       AND state IN ('awaiting_inbound', 'expired')
-       AND expires_at + make_interval(mins => $5) > now()
-     ORDER BY (requested_kobo = $4) DESC, created_at ASC
-     FOR UPDATE SKIP LOCKED LIMIT 1`,
-    [network, receiving, sender, amount, grace],
-  );
+  // Airtime matches a transfer waiting for airtime, preferring the exact
+  // amount; gifted data matches a transfer waiting for a bundle of that size.
+  const candidates = n.dataMb
+    ? await db.query<Transfer>(
+        `SELECT t.* FROM transfers t JOIN data_bundles b ON b.id = t.in_bundle_id
+         WHERE t.from_network = $1 AND t.receiving_number = $2 AND t.sender_number = $3 AND t.in_kind = 'data' AND b.size_mb = $4
+           AND t.state IN ('awaiting_inbound', 'expired') AND t.expires_at + make_interval(mins => $5) > now()
+         ORDER BY t.created_at ASC FOR UPDATE OF t SKIP LOCKED LIMIT 1`,
+        [network, receiving, sender, n.dataMb, grace],
+      )
+    : await db.query<Transfer>(
+        `SELECT * FROM transfers
+         WHERE from_network = $1 AND receiving_number = $2 AND sender_number = $3 AND in_kind = 'airtime'
+           AND state IN ('awaiting_inbound', 'expired')
+           AND expires_at + make_interval(mins => $5) > now()
+         ORDER BY (requested_kobo = $4) DESC, created_at ASC
+         FOR UPDATE SKIP LOCKED LIMIT 1`,
+        [network, receiving, sender, amount, grace],
+      );
   const candidate = candidates.rows[0];
   if (!candidate) return { outcome: "unmatched", notificationId };
+  const updated = await bookInbound(db, actor, candidate, amount, notificationId, {});
+  if (!updated) return { outcome: "unmatched", notificationId };
+  return updated.hold_reason
+    ? { outcome: "held", notificationId, transfer: updated, reason: updated.hold_reason }
+    : { outcome: "matched", notificationId, transfer: updated };
+}
 
-  // What arrived is what we move. The fee is worked out again on the real
-  // amount, and an amount outside the limits is held for a person.
-  const [min, max] = await getSettingValues(db, ["transfer.min_kobo", "transfer.max_kobo"] as const);
-  let holdReason: string | null = null;
-  let fee: FeeBreakdown | null = null;
-  if (amount < min) holdReason = "amount_below_minimum";
-  else if (amount > max) holdReason = "amount_above_maximum";
-  else {
-    try {
-      fee = computeFee(amount, await loadFeeRule(db, candidate.from_network, candidate.to_network));
-    } catch (err) {
-      if (err instanceof UserFacingError && err.code === "fee_exceeds_amount") holdReason = "fee_exceeds_amount";
-      else throw err;
-    }
-  }
-
+// Value has arrived for a waiting transfer. What arrived is what we move,
+// with the fee worked out on the real amount; an amount that cannot be
+// moved is held for a person, with the value still booked as received.
+async function bookInbound(db: Client, actor: string, candidate: Transfer, amount: number, notificationId: number, detail: Record<string, unknown>): Promise<Transfer | undefined> {
+  const { fee, holdReason } = await settlement(db, candidate, amount);
   const nextState: TransferState = holdReason ? "held" : "inbound_confirmed";
   const updated = await claim(db, candidate.id, ["awaiting_inbound", "expired"], nextState, {
     received_kobo: amount,
@@ -294,14 +366,13 @@ export async function recordInbound(db: Client, actor: string, n: InboundNotific
     inbound_confirmed_at: new Date(),
     hold_reason: holdReason,
   });
-  if (!updated) return { outcome: "unmatched", notificationId };
-
+  if (!updated) return undefined;
   await postJournal(db, {
     idempotencyKey: `transfer:${updated.id}:inbound`,
-    description: `Airtime received on ${network} for ${updated.reference}`,
+    description: `${updated.in_kind === "data" ? "Data" : "Airtime"} received on ${updated.from_network} for ${updated.reference}`,
     reference: updated.reference,
     postings: [
-      { account: `pool:${network}`, amountKobo: amount },
+      { account: inboundAccount(updated), amountKobo: amount },
       { account: "owed:senders", amountKobo: -amount },
     ],
   });
@@ -309,14 +380,21 @@ export async function recordInbound(db: Client, actor: string, n: InboundNotific
   await recordEvent(db, updated.id, candidate.state, nextState, actor, {
     notification_id: notificationId,
     received_kobo: amount,
+    ...detail,
     ...(holdReason ? { hold_reason: holdReason } : {}),
   });
-  return holdReason
-    ? { outcome: "held", notificationId, transfer: updated, reason: holdReason }
-    : { outcome: "matched", notificationId, transfer: updated };
+  return updated;
 }
 
-export type PayoutInstruction = { transferId: number; reference: string; network: NetworkCode; number: string; amountKobo: number };
+export type PayoutInstruction = {
+  transferId: number;
+  reference: string;
+  network: NetworkCode;
+  number: string;
+  amountKobo: number;
+  // Present when a bundle, not airtime, is to be delivered.
+  bundle?: Bundle | undefined;
+};
 
 export type PayoutStart = { started: true; instruction: PayoutInstruction } | { started: false; state: TransferState; reason: string };
 
@@ -386,9 +464,10 @@ export async function startPayout(db: Client, actor: string, transferId: number,
   });
   if (!moved) return { started: false, state: t.state, reason: "Another process took this transfer first." };
   await recordEvent(db, t.id, t.state, "paying_out", actor, { attempt: moved.payout_attempts, rail: moved.payout_rail, request_id: moved.payout_request_id });
+  const bundle = t.out_bundle_id ? await activeBundle(db, t.out_bundle_id).catch(() => undefined) : undefined;
   return {
     started: true,
-    instruction: { transferId: t.id, reference: t.reference, network: t.to_network, number: t.recipient_number, amountKobo: payout },
+    instruction: { transferId: t.id, reference: t.reference, network: t.to_network, number: t.recipient_number, amountKobo: payout, ...(bundle ? { bundle } : {}) },
   };
 }
 
@@ -419,7 +498,8 @@ export async function completePayout(db: Client, actor: string, transferId: numb
     postings.push({ account: via.account, amountKobo: -via.chargedKobo });
     if (via.commissionKobo > 0) postings.push({ account: "revenue:provider_commission", amountKobo: -via.commissionKobo });
   } else {
-    postings.push({ account: `pool:${moved.to_network}`, amountKobo: -moved.payout_kobo! });
+    // From our own SIM: airtime from its pool, a gifted bundle from its data pool.
+    postings.push({ account: moved.out_kind === "data" ? `datapool:${moved.to_network}` : `pool:${moved.to_network}`, amountKobo: -moved.payout_kobo! });
   }
   if (moved.network_share_kobo! > 0) postings.push({ account: `owed:${moved.from_network}`, amountKobo: -moved.network_share_kobo! });
   await postJournal(db, {
@@ -468,7 +548,7 @@ export async function completeRefund(db: Client, actor: string, transferId: numb
     reference: moved.reference,
     postings: [
       { account: "owed:senders", amountKobo: moved.received_kobo! },
-      { account: `pool:${moved.from_network}`, amountKobo: -moved.received_kobo! },
+      { account: inboundAccount(moved), amountKobo: -moved.received_kobo! },
     ],
   });
   await recordEvent(db, moved.id, "refunding", "refunded", actor, { refund_reference: refundReference });
@@ -508,8 +588,8 @@ export async function expireQuotes(db: Queryable, actor = "system"): Promise<num
 // receiving number must agree; the sender number is the person's judgement
 // and is recorded as such.
 export async function attachNotification(db: Client, actor: string, notificationId: number, transferId: number): Promise<Transfer> {
-  const n = (await db.query<{ id: number; network_code: string; receiving_number: string; sender_number: string; amount_kobo: number; matched_transfer_id: number | null }>(
-    "SELECT id, network_code, receiving_number, sender_number, amount_kobo, matched_transfer_id FROM inbound_notifications WHERE id = $1 FOR UPDATE",
+  const n = (await db.query<{ id: number; network_code: string; receiving_number: string; sender_number: string; amount_kobo: number; matched_transfer_id: number | null; data_mb: number | null }>(
+    "SELECT id, network_code, receiving_number, sender_number, amount_kobo, matched_transfer_id, data_mb FROM inbound_notifications WHERE id = $1 FOR UPDATE",
     [notificationId],
   )).rows[0];
   if (!n) throw new UserFacingError("no_such_notification", "There is no notification with that id.");
@@ -522,39 +602,10 @@ export async function attachNotification(db: Client, actor: string, notification
   if (t.from_network !== n.network_code || t.receiving_number !== n.receiving_number) {
     throw new UserFacingError("wrong_route", `That airtime arrived on ${n.network_code} number ${n.receiving_number}, but ${t.reference} expects ${t.from_network} number ${t.receiving_number}.`);
   }
-  const amount = n.amount_kobo;
-  const [min, max] = await getSettingValues(db, ["transfer.min_kobo", "transfer.max_kobo"] as const);
-  let holdReason: string | null = null;
-  let fee: FeeBreakdown | null = null;
-  if (amount < min) holdReason = "amount_below_minimum";
-  else if (amount > max) holdReason = "amount_above_maximum";
-  else fee = computeFee(amount, await loadFeeRule(db, t.from_network, t.to_network));
-  const nextState: TransferState = holdReason ? "held" : "inbound_confirmed";
-  const updated = (await claim(db, t.id, ["awaiting_inbound", "expired"], nextState, {
-    received_kobo: amount,
-    fee_kobo: fee?.feeKobo ?? null,
-    platform_share_kobo: fee?.platformShareKobo ?? null,
-    network_share_kobo: fee?.networkShareKobo ?? null,
-    payout_kobo: fee?.payoutKobo ?? null,
-    inbound_confirmed_at: new Date(),
-    hold_reason: holdReason,
-  }))!;
-  await postJournal(db, {
-    idempotencyKey: `transfer:${updated.id}:inbound`,
-    description: `Airtime received on ${n.network_code} for ${updated.reference}, matched by hand`,
-    reference: updated.reference,
-    postings: [
-      { account: `pool:${n.network_code}`, amountKobo: amount },
-      { account: "owed:senders", amountKobo: -amount },
-    ],
-  });
-  await db.query("UPDATE inbound_notifications SET matched_transfer_id = $1 WHERE id = $2", [updated.id, n.id]);
-  await recordEvent(db, updated.id, t.state, nextState, actor, {
-    notification_id: n.id,
-    received_kobo: amount,
-    matched_by_hand: true,
-    notification_sender: n.sender_number,
-    ...(holdReason ? { hold_reason: holdReason } : {}),
-  });
+  if ((t.in_kind === "data") !== (n.data_mb !== null)) {
+    throw new UserFacingError("wrong_kind", t.in_kind === "data" ? `${t.reference} is waiting for gifted data, and that notification is airtime.` : `${t.reference} is waiting for airtime, and that notification is gifted data.`);
+  }
+  const updated = await bookInbound(db, actor, t, n.amount_kobo, n.id, { matched_by_hand: true, notification_sender: n.sender_number });
+  if (!updated) throw new UserFacingError("not_waiting", `Transfer ${t.reference} was taken by another process first.`);
   return updated;
 }

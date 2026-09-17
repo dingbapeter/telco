@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { describeBundle, getBundle, listBundles, type Bundle } from "../bundles.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { formatNaira, parseNaira } from "../money.ts";
@@ -13,7 +14,7 @@ const NAMES: Record<NetworkCode, string> = { MTN: "MTN", AIRTEL: "Airtel", GLO: 
 
 export type PaymentOptions = { paystack?: PaystackProvider | undefined; publicBaseUrl: string };
 
-type Values = { network?: string; number?: string; amount?: string; email?: string };
+type Values = { network?: string; number?: string; amount?: string; email?: string; bundle?: string };
 
 async function buyPage(db: pg.Pool, values: Values = {}, problem?: Html, status = 200): Promise<Response> {
   const [enabled, min, max, discounts] = await getSettingValues(db, ["retail.enabled", "retail.min_kobo", "retail.max_kobo", "retail.discount_basis_points"] as const);
@@ -21,6 +22,9 @@ async function buyPage(db: pg.Pool, values: Values = {}, problem?: Html, status 
     return { kind: "html", status: 404, body: shell("Not open", html`${notice("info", html`Buying airtime is not open yet. You can still <a href="/">move airtime between networks</a>.`)}`) };
   }
   const deals = NETWORK_CODES.filter((c) => discounts[c] > 0);
+  const bundles = await listBundles(db, { activeOnly: true });
+  const byNetwork = new Map<string, Bundle[]>();
+  for (const b of bundles) byNetwork.set(b.network_code, [...(byNetwork.get(b.network_code) ?? []), b]);
   const body = html`<h1>Buy airtime for any network</h1>
     <p>Pay by bank transfer, card or USSD and the airtime lands on the number you choose. From ${formatNaira(min)} to ${formatNaira(max)}.</p>
     ${deals.length ? html`<p class="deal">Today: ${deals.map((c) => `${NAMES[c]} airtime at ${(discounts[c] / 100).toFixed(discounts[c] % 100 === 0 ? 0 : 2)} percent off`).join(", ")}.</p>` : ""}
@@ -31,7 +35,11 @@ async function buyPage(db: pg.Pool, values: Values = {}, problem?: Html, status 
         <option value="" ${!values.network ? "selected" : ""}>Choose network</option>
         ${NETWORK_CODES.map((c) => html`<option value="${c}" ${c === values.network ? "selected" : ""}>${NAMES[c]}${discounts[c] > 0 ? ` (${(discounts[c] / 100).toFixed(discounts[c] % 100 === 0 ? 0 : 2)} percent off)` : ""}</option>`)}
       </select></div>
-      <div class="field"><label for="amount">Airtime amount, in naira</label><input id="amount" name="amount" type="text" inputmode="numeric" required value="${values.amount ?? ""}" placeholder="500"></div>
+      <div class="field"><label for="amount">Airtime amount, in naira ${bundles.length > 0 ? html`<span class="muted">(leave empty to buy a bundle)</span>` : ""}</label><input id="amount" name="amount" type="text" inputmode="numeric" value="${values.amount ?? ""}" placeholder="500"></div>
+      ${bundles.length > 0
+        ? html`<div class="field"><label for="bundle">Or a data bundle</label><select id="bundle" name="bundle"><option value="" ${!values.bundle ? "selected" : ""}>No bundle, airtime only</option>
+            ${[...byNetwork.entries()].map(([net, list]) => html`<optgroup label="${NAMES[net as NetworkCode]}">${list.map((b) => html`<option value="${b.id}" ${String(b.id) === values.bundle ? "selected" : ""}>${describeBundle(b)}</option>`)}</optgroup>`)}</select></div>`
+        : ""}
       <div class="field"><label for="email">Email for a receipt <span class="muted">(optional)</span></label><input id="email" name="email" type="email" value="${values.email ?? ""}"></div>
       <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
       <button type="submit">See the price and pay</button>
@@ -42,6 +50,8 @@ async function buyPage(db: pg.Pool, values: Values = {}, problem?: Html, status 
 
 async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message?: Html): Promise<Response> {
   const [bankName, accountNumber, accountName] = await getSettingValues(db, ["retail.bank_name", "retail.bank_account_number", "retail.bank_account_name"] as const);
+  const bundle = o.bundle_id ? await getBundle(db, o.bundle_id) : undefined;
+  const item = bundle ? `the bundle ${bundle.name}` : `${formatNaira(o.face_kobo)} of ${NAMES[o.network_code]} airtime`;
   const bank = bankName && accountNumber && accountName ? { bankName, accountNumber, accountName } : undefined;
   const net = NAMES[o.network_code];
   let main: Html;
@@ -52,7 +62,7 @@ async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message
       const expired = o.state === "expired" || new Date(o.expires_at).getTime() < Date.now();
       main = html`${message ?? ""}
         ${expired ? notice("problem", html`The time to pay has passed. If you already paid by bank transfer, it will still be matched when it arrives. Otherwise <a href="/buy">start again</a>.`) : ""}
-        <h1>Pay ${formatNaira(o.price_kobo)} for ${formatNaira(o.face_kobo)} of ${net} airtime</h1>
+        <h1>Pay ${formatNaira(o.price_kobo)} for ${item}</h1>
         <p>For ${mask(o.recipient_number)}.${o.discount_kobo > 0 ? ` That is ${formatNaira(o.discount_kobo)} off.` : ""}</p>
         ${options.paystack && !expired
           ? html`<form method="post" action="/o/${o.reference}/pay"><button type="submit">Pay ${formatNaira(o.price_kobo)} by card, bank or USSD</button></form>
@@ -70,11 +80,11 @@ async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message
     }
     case "paid":
     case "delivering":
-      main = html`${notice("ok", html`Payment of ${formatNaira(o.paid_kobo!)} received.`)}<h1>Sending ${formatNaira(o.face_kobo)} of ${net} airtime to ${mask(o.recipient_number)}</h1><p>This usually takes a minute. This page updates itself.</p>`;
+      main = html`${notice("ok", html`Payment of ${formatNaira(o.paid_kobo!)} received.`)}<h1>Sending ${item} to ${mask(o.recipient_number)}</h1><p>This usually takes a minute. This page updates itself.</p>`;
       refresh = 20;
       break;
     case "delivered":
-      main = html`${notice("ok", html`Done. ${formatNaira(o.face_kobo)} of ${net} airtime was sent to ${mask(o.recipient_number)}.`)}<h1>Order complete</h1><p><a class="button" href="/buy">Buy more</a></p>`;
+      main = html`${notice("ok", html`Done. ${item.charAt(0).toUpperCase() + item.slice(1)} was sent to ${mask(o.recipient_number)}.`)}<h1>Order complete</h1><p><a class="button" href="/buy">Buy more</a></p>`;
       break;
     case "delivery_failed":
     case "held":
@@ -98,13 +108,14 @@ export function registerBuy(app: App, options: PaymentOptions): void {
   app.post(
     "/buy",
     async (req, db) => {
-      const values: Values = { network: req.form.get("network") ?? "", number: req.form.get("number") ?? "", amount: req.form.get("amount") ?? "", email: req.form.get("email") ?? "" };
+      const values: Values = { network: req.form.get("network") ?? "", number: req.form.get("number") ?? "", amount: req.form.get("amount") ?? "", email: req.form.get("email") ?? "", bundle: req.form.get("bundle") ?? "" };
       if ((req.form.get("website") ?? "") !== "") return buyPage(db, values, notice("problem", "Something went wrong with the form. Please try again."), 400);
-      const face = parseNaira(values.amount ?? "");
-      if (face === undefined) return buyPage(db, values, notice("problem", "Enter the amount in naira, like 500."), 400);
+      const bundleId = values.bundle ? Number(values.bundle) : undefined;
+      const face = bundleId ? undefined : parseNaira(values.amount ?? "");
+      if (!bundleId && face === undefined) return buyPage(db, values, notice("problem", "Enter the amount in naira, like 500, or pick a bundle."), 400);
       if (tooManyQuotes(`buy:${req.ip}`)) return buyPage(db, values, notice("problem", "You have started several orders in the last few minutes. Pay for one of them, or wait ten minutes."), 429);
       try {
-        const order = await withActor("buyer", (c) => createOrder(c, "buyer", { network: values.network ?? "", recipientNumber: values.number ?? "", faceKobo: face, email: values.email }), db);
+        const order = await withActor("buyer", (c) => createOrder(c, "buyer", { network: values.network ?? "", recipientNumber: values.number ?? "", faceKobo: face, bundleId, email: values.email }), db);
         return { kind: "redirect", to: `/o/${order.reference}` };
       } catch (err) {
         if (err instanceof UserFacingError) return buyPage(db, values, notice("problem", err.message), 400);

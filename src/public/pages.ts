@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { describeBundle, getBundle, listBundles, type Bundle } from "../bundles.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { formatNaira, parseNaira } from "../money.ts";
@@ -67,9 +68,18 @@ export function resetQuoteLimits(): void {
   recent.clear();
 }
 
-type FormValues = { from?: string; sender?: string; to?: string; recipient?: string; amount?: string };
+type FormValues = { from?: string; sender?: string; to?: string; recipient?: string; amount?: string; send?: string; receive?: string };
 
-function form(values: FormValues, problem?: Html): Html {
+// Bundles grouped by network for a select, so the page needs no script to
+// show the right ones: the form checks the network matches on submit.
+function bundleOptions(bundles: Bundle[], selected: string | undefined, blank: string): Html {
+  const byNetwork = new Map<string, Bundle[]>();
+  for (const b of bundles) byNetwork.set(b.network_code, [...(byNetwork.get(b.network_code) ?? []), b]);
+  return html`<option value="" ${!selected ? "selected" : ""}>${blank}</option>
+    ${[...byNetwork.entries()].map(([net, list]) => html`<optgroup label="${NAMES[net as NetworkCode]}">${list.map((b) => html`<option value="${b.id}" ${String(b.id) === selected ? "selected" : ""}>${describeBundle(b)}</option>`)}</optgroup>`)}`;
+}
+
+function form(values: FormValues, problem: Html | undefined, giftable: Bundle[], deliverable: Bundle[]): Html {
   const networkOptions = (selected: string | undefined) =>
     html`<option value="" ${!selected ? "selected" : ""}>Choose network</option>${NETWORK_CODES.map((c) => html`<option value="${c}" ${c === selected ? "selected" : ""}>${NAMES[c]}</option>`)}`;
   return html`<form method="post" action="/quote" class="panel" id="quote">
@@ -82,8 +92,18 @@ function form(values: FormValues, problem?: Html): Html {
       <input id="recipient" name="recipient" type="tel" inputmode="tel" required value="${values.recipient ?? ""}" data-network="to"></div>
     <div class="field"><label for="to">Its network</label>
       <select id="to" name="to" required>${networkOptions(values.to)}</select></div>
-    <div class="field"><label for="amount">Amount of airtime to move, in naira</label>
-      <input id="amount" name="amount" type="text" inputmode="decimal" required value="${values.amount ?? ""}" placeholder="500"></div>
+    ${giftable.length > 0
+      ? html`<div class="field"><label for="send">What you are sending</label>
+          <select id="send" name="send">${bundleOptions(giftable, values.send, "Airtime, an amount I choose")}</select>
+          <span class="muted">Pick a data bundle you hold to send that instead of airtime. It is valued at its price.</span></div>`
+      : ""}
+    <div class="field"><label for="amount">Amount of airtime to move, in naira <span class="muted">(leave empty if sending or receiving a bundle)</span></label>
+      <input id="amount" name="amount" type="text" inputmode="decimal" value="${values.amount ?? ""}" placeholder="500"></div>
+    ${deliverable.length > 0
+      ? html`<div class="field"><label for="receive">What the other side gets</label>
+          <select id="receive" name="receive">${bundleOptions(deliverable, values.receive, "Airtime")}</select>
+          <span class="muted">Pick a data bundle and we tell you exactly how much airtime to send for it.</span></div>`
+      : ""}
     <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
     <button type="submit">See the fee and how to send</button>
   </form>
@@ -98,14 +118,17 @@ async function homePage(db: pg.Pool, values: FormValues = {}, problem?: Html, st
     getSettingValue(db, "transfer.min_kobo"),
     getSettingValue(db, "transfer.max_kobo"),
   ]);
+  const bundles = await listBundles(db, { activeOnly: true });
+  const giftable = bundles.filter((b) => b.giftable);
   const body = html`<h1>Airtime on one network. Use it on another.</h1>
     <p>Send airtime from your MTN, Airtel, Glo or 9mobile line to a number on a different network. You dial your own network's transfer code, we deliver the airtime on the other side, and a small fee comes out of the amount.</p>
     <ul class="facts">
       <li>Fee: ${(percent / 100).toFixed(percent % 100 === 0 ? 0 : 2)} percent, at least ${formatNaira(floor)} and at most ${formatNaira(ceiling)}.</li>
       <li>From ${formatNaira(min)} to ${formatNaira(max)} per transfer.</li>
       <li>No account, no card, no app. Just your phone's dial pad.</li>
+      ${bundles.length > 0 ? html`<li>The other side can get a data bundle instead of airtime${giftable.length > 0 ? ", and you can send a data bundle you hold" : ""}.</li>` : ""}
     </ul>
-    ${form(values, problem)}
+    ${form(values, problem, giftable, bundles)}
     <h2 id="status">Check a transfer</h2>
     <form method="post" action="/status" class="panel">
       <div class="field"><label for="reference">Reference, like TX-ABCD2345</label><input id="reference" name="reference" type="text" required autocapitalize="characters"></div>
@@ -117,10 +140,13 @@ async function homePage(db: pg.Pool, values: FormValues = {}, problem?: Html, st
 // The whole instruction in one screen: how much to dial, to which number,
 // by when, and what the other side will get.
 async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
-  const codes = await getSettingValue(db, "network.transfer_code");
-  const code = codes[t.from_network];
+  const [codes, giftCodes] = await Promise.all([getSettingValue(db, "network.transfer_code"), getSettingValue(db, "network.data_gift_code")]);
+  const inBundle = t.in_bundle_id ? await getBundle(db, t.in_bundle_id) : undefined;
+  const outBundle = t.out_bundle_id ? await getBundle(db, t.out_bundle_id) : undefined;
+  const gets = outBundle ? `the bundle ${outBundle.name}` : `${formatNaira(t.payout_kobo ?? t.quoted_payout_kobo)} of airtime`;
+  const code = inBundle ? giftCodes[t.from_network] : codes[t.from_network];
   const amountNaira = t.requested_kobo % 100 === 0 ? String(t.requested_kobo / 100) : (t.requested_kobo / 100).toFixed(2);
-  const dial = code ? code.replace("{amount}", amountNaira).replace("{number}", t.receiving_number) : "";
+  const dial = code ? code.replace("{amount}", amountNaira).replace("{number}", t.receiving_number).replace("{size}", inBundle ? inBundle.name : "") : "";
   const needsPin = dial.includes("{pin}");
   const shown = dial.replace("{pin}", "PIN");
   const from = NAMES[t.from_network];
@@ -140,28 +166,28 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
         ${t.state === "expired" || expired
           ? notice("problem", html`The time to send has passed. If you already sent the airtime, wait a few minutes and reload this page; it will still be matched. If not, <a href="/">start again</a>.`)
           : notice("info", html`Send before ${deadline} Lagos time, about ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"} from now. This page updates itself.`)}
-        <h1>Now send ${formatNaira(t.requested_kobo)} of ${from} airtime to <span class="big">${t.receiving_number}</span></h1>
-        <p>Use ${from}'s own airtime transfer from your line ${mask(t.sender_number)}. The recipient gets ${payout} on ${to} once it lands.</p>
+        <h1>Now ${inBundle ? `gift the bundle ${inBundle.name}` : `send ${formatNaira(t.requested_kobo)} of ${from} airtime`} to <span class="big">${t.receiving_number}</span></h1>
+        <p>Use ${from}'s own ${inBundle ? "data gifting" : "airtime transfer"} from your line ${mask(t.sender_number)}. The recipient gets ${gets} on ${to} once it lands.${outBundle && !inBundle ? ` Send exactly ${formatNaira(t.requested_kobo)}: that covers the bundle's ${formatNaira(outBundle.price_kobo)} and the fee.` : ""}</p>
         ${dial
           ? html`<p class="dial-label">On your ${from} line, dial:</p>
             <p class="dial">${shown}</p>
             ${needsPin ? html`<p>Put your ${from} transfer PIN where it says PIN. We never ask for your PIN and you should never type it on a website.</p>` : html`<p><a class="button" href="tel:${encodeURIComponent(dial).replaceAll("%2A", "*")}">Open the dial pad with this code</a></p>`}`
-          : html`<p>Open your ${from} airtime transfer menu and send exactly ${formatNaira(t.requested_kobo)} to ${t.receiving_number}.</p>`}
-        <p>Send the exact amount from the number you gave. If a different amount arrives, we move what arrived and the fee is worked out on that.</p>`;
+          : html`<p>Open your ${from} ${inBundle ? "data gifting" : "airtime transfer"} menu and ${inBundle ? `gift ${inBundle.name}` : `send exactly ${formatNaira(t.requested_kobo)}`} to ${t.receiving_number}.</p>`}
+        <p>${outBundle ? "Send the exact amount from the number you gave. A different amount is held for a person, who will return it." : inBundle ? "Gift that exact bundle from the number you gave. A different bundle is kept for a person to look at." : "Send the exact amount from the number you gave. If a different amount arrives, we move what arrived and the fee is worked out on that."}</p>`;
       refresh = 20;
       break;
     case "inbound_confirmed":
     case "awaiting_approval":
     case "paying_out":
-      main = html`${notice("ok", html`We have your ${formatNaira(t.received_kobo!)} on ${from}.`)}
-        <h1>Sending ${payout} to ${mask(t.recipient_number)} on ${to}</h1>
+      main = html`${notice("ok", html`We have your ${inBundle ? inBundle.name : formatNaira(t.received_kobo!)} on ${from}.`)}
+        <h1>Sending ${outBundle ? outBundle.name : payout} to ${mask(t.recipient_number)} on ${to}</h1>
         <p>This usually takes a minute. Fee ${formatNaira(t.fee_kobo!)}. This page updates itself.</p>`;
       refresh = 20;
       break;
     case "completed":
-      main = html`${notice("ok", html`Done. ${payout} of ${to} airtime was sent to ${mask(t.recipient_number)}.`)}
+      main = html`${notice("ok", html`Done. ${outBundle ? `The bundle ${outBundle.name}` : `${payout} of ${to} airtime`} was sent to ${mask(t.recipient_number)}.`)}
         <h1>Transfer complete</h1>
-        <p>${formatNaira(t.received_kobo!)} received on ${from}, fee ${formatNaira(t.fee_kobo!)}, ${payout} delivered on ${to}.</p>
+        <p>${inBundle ? `${inBundle.name} (valued at ${formatNaira(t.received_kobo!)})` : formatNaira(t.received_kobo!)} received on ${from}, fee ${formatNaira(t.fee_kobo!)}, ${outBundle ? outBundle.name : payout} delivered on ${to}.</p>
         <p><a class="button" href="/">Send another</a></p>`;
       break;
     case "held":
@@ -170,6 +196,8 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
         <h1>Being checked</h1>
         <p>${t.hold_reason === "amount_below_minimum" || t.hold_reason === "amount_above_maximum" || t.hold_reason === "fee_exceeds_amount"
           ? "The amount that arrived is outside the limits we can move, so it will be sent back to your line."
+          : t.hold_reason === "amount_below_required" || t.hold_reason === "amount_above_required"
+            ? `The amount that arrived was not the exact ${formatNaira(t.requested_kobo)} the bundle needs, so it will be sent back to your line.`
           : "The airtime could not be delivered on the first try. It will be sent, or sent back to you. Nothing is lost."} Keep this reference: ${t.reference}. This page updates itself.</p>`;
       refresh = 60;
       break;
@@ -199,11 +227,18 @@ export function registerPublic(app: App): void {
         to: req.form.get("to") ?? "",
         recipient: req.form.get("recipient") ?? "",
         amount: req.form.get("amount") ?? "",
+        send: req.form.get("send") ?? "",
+        receive: req.form.get("receive") ?? "",
       };
       // Bots fill the hidden field; people cannot see it.
       if ((req.form.get("website") ?? "") !== "") return homePage(db, values, notice("problem", "Something went wrong with the form. Please try again."), 400);
-      const amountKobo = parseNaira(values.amount ?? "");
-      if (amountKobo === undefined) return homePage(db, values, notice("problem", "Enter the amount in naira, like 500 or 1,500."), 400);
+      const inBundleId = values.send ? Number(values.send) : undefined;
+      const outBundleId = values.receive ? Number(values.receive) : undefined;
+      let amountKobo: number | undefined;
+      if (!inBundleId && !outBundleId) {
+        amountKobo = parseNaira(values.amount ?? "");
+        if (amountKobo === undefined) return homePage(db, values, notice("problem", "Enter the amount in naira, like 500 or 1,500, or pick a bundle."), 400);
+      }
       const sender = normaliseNigerianNumber(values.sender ?? "");
       if (!sender) return homePage(db, values, notice("problem", "Your number should be a Nigerian mobile number like 08031234567."), 400);
       if (tooManyQuotes(`n:${sender}`) || tooManyQuotes(`ip:${req.ip}`)) {
@@ -217,6 +252,8 @@ export function registerPublic(app: App): void {
             senderNumber: values.sender ?? "",
             recipientNumber: values.recipient ?? "",
             amountKobo,
+            inBundleId,
+            outBundleId,
           }),
           db,
         );

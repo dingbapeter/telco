@@ -11,6 +11,7 @@ export class FakeVtpass {
   script = new Map<string, Scripted>();
   defaultPay: (body: { request_id: string; serviceID: string; amount: number; phone: string }) => unknown = (b) => delivered(b.request_id, b.amount);
   balance: number | undefined = 12_345.5;
+  variations?: Record<string, { variation_code: string; name: string; variation_amount: string }[]>;
   keys = { api: "api-test", secret: "secret-test", public: "public-test" };
 
   async start(): Promise<void> {
@@ -28,7 +29,8 @@ export class FakeVtpass {
         if (headers["api-key"] !== this.keys.api) return answer(200, { code: "017", response_description: "INVALID CREDENTIALS" });
         if (req.method === "GET" && req.url!.startsWith("/service-variations")) {
           if (headers["public-key"] !== this.keys.public) return answer(200, { code: "017", response_description: "INVALID CREDENTIALS" });
-          return answer(200, { code: "000", response_description: "000", content: { ServiceName: "MTN Airtime VTU", serviceID: "mtn", varations: [] } });
+          const serviceID = new URL(req.url!, "http://x").searchParams.get("serviceID") ?? "";
+          return answer(200, { code: "000", response_description: "000", content: { ServiceName: serviceID, serviceID, varations: this.variations?.[serviceID] ?? [] } });
         }
         if (req.method === "GET" && req.url === "/balance") {
           return this.balance === undefined ? answer(404, { message: "no such page" }) : answer(200, { code: "000", contents: { balance: this.balance } });

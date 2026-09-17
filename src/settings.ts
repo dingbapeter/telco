@@ -351,6 +351,26 @@ export const SETTINGS = {
     validate: perNetwork(text(400)),
     format: each((v) => (v === "" ? "built-in" : v)),
   }),
+  "network.data_gift_code": define({
+    key: "network.data_gift_code",
+    group: "Networks",
+    label: "Data gifting code the sender dials",
+    description:
+      "The network's own code for gifting data to another number on the same network, with {number} and where the network needs them {size} and {pin}, for example *131*{number}*{size}#. Empty means data cannot be sent from this network yet.",
+    fallback: emptyPerNetwork,
+    validate: perNetwork(text(60)),
+    format: each((v) => (v === "" ? "not set" : v)),
+  }),
+  "network.data_inbound_pattern": define({
+    key: "network.data_inbound_pattern",
+    group: "Networks",
+    label: "How to read the network's data received message",
+    description:
+      "A pattern with (?<size>...) for the amount of data, like 1GB or 500MB, and (?<sender>...) for the sender's number, matched against the message the network sends when data is gifted to us. Empty means the built-in pattern. Test it on the Phone bridge page.",
+    fallback: emptyPerNetwork,
+    validate: perNetwork(text(400)),
+    format: each((v) => (v === "" ? "built-in" : v)),
+  }),
   "network.transfer_code": define({
     key: "network.transfer_code",
     group: "Networks",

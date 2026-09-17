@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import type pg from "pg";
 import type { Queryable } from "./db.ts";
+import { activeBundle, type Bundle } from "./bundles.ts";
 import { UserFacingError } from "./errors.ts";
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { applyBasisPoints, assertKobo, formatNaira } from "./money.ts";
@@ -38,6 +39,7 @@ export type Order = {
   hold_reason: string | null;
   created_at: Date;
   expires_at: Date;
+  bundle_id: number | null;
 };
 
 type Client = pg.PoolClient;
@@ -81,24 +83,26 @@ export function priceFor(faceKobo: number, discountBasisPoints: number): Quote {
 
 // A buyer asks for airtime on a network. The price is the face value less
 // any discount set for that network to drain its pool.
-export async function createOrder(db: Client, actor: string, input: { network: string; recipientNumber: string; faceKobo: number; email?: string | undefined }): Promise<Order> {
+export async function createOrder(db: Client, actor: string, input: { network: string; recipientNumber: string; faceKobo?: number | undefined; bundleId?: number | undefined; email?: string | undefined }): Promise<Order> {
   const network = input.network.toUpperCase();
   if (!(NETWORK_CODES as readonly string[]).includes(network)) throw new UserFacingError("unknown_network", "Choose the network of the number you are buying for.");
   const recipient = normaliseNigerianNumber(input.recipientNumber);
   if (!recipient) throw new UserFacingError("bad_recipient_number", "The number should be a Nigerian mobile number like 08021234567.");
-  const face = assertKobo(input.faceKobo);
+  const bundle: Bundle | undefined = input.bundleId ? await activeBundle(db, input.bundleId, network) : undefined;
+  const face = bundle ? bundle.price_kobo : assertKobo(input.faceKobo ?? 0);
   const [enabled, min, max, discounts, windowMinutes] = await getSettingValues(db, ["retail.enabled", "retail.min_kobo", "retail.max_kobo", "retail.discount_basis_points", "retail.order_window_minutes"] as const);
   if (!enabled) throw new UserFacingError("retail_off", "Buying airtime is not open right now. Try again later.");
-  if (face < min) throw new UserFacingError("below_minimum", `The smallest purchase is ${formatNaira(min)}.`);
+  if (!bundle && face < min) throw new UserFacingError("below_minimum", `The smallest purchase is ${formatNaira(min)}.`);
   if (face > max) throw new UserFacingError("above_maximum", `The largest purchase is ${formatNaira(max)}.`);
-  if (face % 100 !== 0) throw new UserFacingError("whole_naira", "Buy a whole number of naira, like 500.");
-  const q = priceFor(face, discounts[network as NetworkCode]);
+  if (face % 100 !== 0 && !bundle) throw new UserFacingError("whole_naira", "Buy a whole number of naira, like 500.");
+  // A bundle is sold at its catalogue price; the discount is for airtime.
+  const q = bundle ? { faceKobo: face, discountKobo: 0, priceKobo: face } : priceFor(face, discounts[network as NetworkCode]);
   const email = input.email?.trim() || null;
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new UserFacingError("bad_email", "That does not look like an email address. Leave it empty if you prefer.");
   const { rows } = await db.query<Order>(
-    `INSERT INTO orders (reference, state, network_code, recipient_number, buyer_email, face_kobo, discount_kobo, price_kobo, expires_at)
-     VALUES ($1, 'awaiting_payment', $2, $3, $4, $5, $6, $7, now() + make_interval(mins => $8)) RETURNING *`,
-    [newOrderReference(), network, recipient, email, q.faceKobo, q.discountKobo, q.priceKobo, windowMinutes],
+    `INSERT INTO orders (reference, state, network_code, recipient_number, buyer_email, face_kobo, discount_kobo, price_kobo, expires_at, bundle_id)
+     VALUES ($1, 'awaiting_payment', $2, $3, $4, $5, $6, $7, now() + make_interval(mins => $8), $9) RETURNING *`,
+    [newOrderReference(), network, recipient, email, q.faceKobo, q.discountKobo, q.priceKobo, windowMinutes, bundle?.id ?? null],
   );
   const order = rows[0]!;
   await recordEvent(db, order.id, null, "awaiting_payment", actor, { face_kobo: face, price_kobo: q.priceKobo });
@@ -135,13 +139,13 @@ export async function recordPayment(db: Client, actor: string, orderId: number, 
 }
 
 export type DeliveryOptions = { fundingAccount?: string; rail?: string; requestId?: string };
-export type DeliveryStart = { started: true; network: NetworkCode; number: string; amountKobo: number } | { started: false; state: OrderState; reason: string };
+export type DeliveryStart = { started: true; network: NetworkCode; number: string; amountKobo: number; bundle?: Bundle | undefined } | { started: false; state: OrderState; reason: string };
 
 export async function startDelivery(db: Client, actor: string, orderId: number, options: DeliveryOptions = {}): Promise<DeliveryStart> {
   const o = (await db.query<Order>("SELECT * FROM orders WHERE id = $1 FOR UPDATE", [orderId])).rows[0];
   if (!o) throw new UserFacingError("no_such_order", "There is no order with that id.");
   if (o.state !== "paid" && o.state !== "delivery_failed") return { started: false, state: o.state, reason: `Order is ${o.state.replaceAll("_", " ")}, not waiting for delivery.` };
-  const funding = options.fundingAccount ?? `pool:${o.network_code}`;
+  const funding = options.fundingAccount ?? (o.bundle_id ? `datapool:${o.network_code}` : `pool:${o.network_code}`);
   await lockAccount(db, funding);
   const available = await balance(db, funding);
   if (available < o.face_kobo) {
@@ -152,7 +156,8 @@ export async function startDelivery(db: Client, actor: string, orderId: number, 
   const moved = await claim(db, o.id, o.state, "delivering", { delivery_attempts: o.delivery_attempts + 1, delivery_rail: options.rail ?? "manual", delivery_request_id: options.requestId ?? null, delivery_next_attempt_at: null });
   if (!moved) return { started: false, state: o.state, reason: "Another process took this order first." };
   await recordEvent(db, o.id, o.state, "delivering", actor, { attempt: moved.delivery_attempts, rail: moved.delivery_rail, request_id: moved.delivery_request_id });
-  return { started: true, network: o.network_code, number: o.recipient_number, amountKobo: o.face_kobo };
+  const bundle = o.bundle_id ? await activeBundle(db, o.bundle_id).catch(() => undefined) : undefined;
+  return { started: true, network: o.network_code, number: o.recipient_number, amountKobo: o.face_kobo, bundle };
 }
 
 // The airtime landed. Books the sale: the buyer's money against the pool
@@ -168,7 +173,7 @@ export async function completeDelivery(db: Client, actor: string, orderId: numbe
     postings.push({ account: via.account, amountKobo: -via.chargedKobo });
     if (via.commissionKobo > 0) postings.push({ account: "revenue:provider_commission", amountKobo: -via.commissionKobo });
   } else {
-    postings.push({ account: `pool:${moved.network_code}`, amountKobo: -moved.face_kobo });
+    postings.push({ account: moved.bundle_id ? `datapool:${moved.network_code}` : `pool:${moved.network_code}`, amountKobo: -moved.face_kobo });
   }
   await postJournal(db, { idempotencyKey: `order:${moved.id}:delivery`, description: `Delivered ${formatNaira(moved.face_kobo)} on ${moved.network_code} for ${moved.reference}`, reference: moved.reference, postings });
   await recordEvent(db, moved.id, "delivering", "delivered", actor, { reference });

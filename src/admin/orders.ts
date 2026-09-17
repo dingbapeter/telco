@@ -2,6 +2,7 @@ import type pg from "pg";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { cancelOrder, completeDelivery, failDelivery, getOrder, getOrderByReference, recordPayment, refundOrder, releaseOrderHold, startDelivery, type Order } from "../orders.ts";
+import { getBundle } from "../bundles.ts";
 import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf, money, nairaField, pager, requiredField, stateBadge, when } from "./shared.ts";
@@ -43,7 +44,7 @@ async function listPage(req: Request, db: pg.Pool): Promise<string> {
   return page({ title: "Orders", admin: req.admin, current: "/admin/orders", body });
 }
 
-function actions(req: Request, o: Order): Html {
+function actions(req: Request, o: Order, bundle?: { name: string } | undefined): Html {
   const form = (action: string, label: string, cls = "", extra: Html = html``) =>
     html`<form method="post" action="/admin/orders/${o.id}/${action}" class="panel">${csrf(req)}${extra}<button type="submit" class="${cls}">${label}</button></form>`;
   const out: Html[] = [];
@@ -59,7 +60,7 @@ function actions(req: Request, o: Order): Html {
   if (o.state === "delivery_failed") out.push(form("retry", "Try the provider again now", "secondary"));
   if (o.state === "paid" || o.state === "delivery_failed") out.push(form("delivery/start", "Deliver by hand", "", html`<p>Marks the order as delivering and shows you what to send from our ${o.network_code} SIM.</p>`));
   if (o.state === "delivering") {
-    out.push(html`<div class="panel"><p><strong>Send ${money(o.face_kobo)} of ${o.network_code} airtime to ${o.recipient_number}</strong> from our ${o.network_code} SIM, then record it.</p>
+    out.push(html`<div class="panel"><p><strong>${bundle ? `Gift the bundle ${bundle.name} to ${o.recipient_number}` : `Send ${money(o.face_kobo)} of ${o.network_code} airtime to ${o.recipient_number}`}</strong> from our ${o.network_code} SIM, then record it.</p>
       <form method="post" action="/admin/orders/${o.id}/delivery/done">${csrf(req)}<label for="dref">Reference from the network's message</label><input id="dref" name="reference" type="text" required><button type="submit">Airtime sent</button></form>
       <form method="post" action="/admin/orders/${o.id}/delivery/failed">${csrf(req)}<label for="why">What went wrong</label><input id="why" name="reason" type="text" required><button type="submit" class="danger">Could not send</button></form></div>`);
   }
@@ -76,8 +77,9 @@ async function detailPage(req: Request, db: pg.Pool, id: number, message?: Html)
   const o = await getOrder(db, id);
   if (!o) throw new UserFacingError("no_such_order", "There is no order with that id.");
   const events = (await db.query<{ at: Date; from_state: string | null; to_state: string; actor: string; detail: Record<string, unknown> }>("SELECT at, from_state, to_state, actor, detail FROM order_events WHERE order_id = $1 ORDER BY id", [id])).rows;
+  const bundle = o.bundle_id ? await getBundle(db, o.bundle_id) : undefined;
   const body = html`<h1>${o.reference} ${stateBadge(o.state)}</h1>${message ?? ""}
-    <dl><dt>Airtime</dt><dd>${money(o.face_kobo)} on ${o.network_code} to ${o.recipient_number}</dd>
+    <dl><dt>${bundle ? "Bundle" : "Airtime"}</dt><dd>${bundle ? `${bundle.name} (${money(o.face_kobo)})` : money(o.face_kobo)} on ${o.network_code} to ${o.recipient_number}</dd>
       <dt>Price</dt><dd>${money(o.price_kobo)}${o.discount_kobo > 0 ? html` (${money(o.discount_kobo)} off)` : ""}</dd>
       ${o.buyer_email ? html`<dt>Buyer email</dt><dd>${o.buyer_email}</dd>` : ""}
       ${o.paid_kobo !== null ? html`<dt>Paid</dt><dd>${money(o.paid_kobo)} by ${o.payment_method}, reference ${o.payment_reference}, fee ${money(o.payment_fee_kobo ?? 0)}, at ${when(o.paid_at)}</dd>` : ""}
@@ -87,7 +89,7 @@ async function detailPage(req: Request, db: pg.Pool, id: number, message?: Html)
       ${o.refunded_at ? html`<dt>Refunded</dt><dd>${money(o.refunded_kobo)} at ${when(o.refunded_at)}, reference ${o.refund_reference}</dd>` : ""}
       ${o.hold_reason ? html`<dt>Held because</dt><dd>${o.hold_reason.replaceAll("_", " ")}</dd>` : ""}
       <dt>Delivery attempts</dt><dd>${o.delivery_attempts}</dd></dl>
-    ${actions(req, o)}
+    ${actions(req, o, bundle)}
     <h2>History</h2>
     <div class="scroll"><table><tr><th>When</th><th>Change</th><th>By</th><th>Detail</th></tr>
       ${events.map((e) => html`<tr><td>${when(e.at)}</td><td>${e.from_state ? e.from_state.replaceAll("_", " ") + " to " : ""}${e.to_state.replaceAll("_", " ")}</td><td>${e.actor}</td><td><code>${JSON.stringify(e.detail)}</code></td></tr>`)}

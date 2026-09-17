@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { formatNaira } from "../money.ts";
 import { type NetworkCode } from "../settings.ts";
-import type { PayoutRail, RailHealth, SendResult } from "./rail.ts";
+import type { PayoutRail, ProviderBundle, RailHealth, SendInput, SendResult } from "./rail.ts";
 
 // VTpass sells airtime on every Nigerian network through an interface our
 // server calls. Their interface, as confirmed against three independent
@@ -98,13 +98,31 @@ export class VtpassRail implements PayoutRail {
     }
   }
 
-  async send(input: { requestId: string; network: NetworkCode; number: string; amountKobo: number }): Promise<SendResult> {
+  // Data bundles live under a separate service per network, and the
+  // provider names each bundle by a variation code we keep in the catalogue.
+  async listDataBundles(network: NetworkCode): Promise<ProviderBundle[]> {
+    const body = await this.call("GET", `/service-variations?serviceID=${VTPASS_SERVICE_IDS[network]}-data`);
+    if (body.code !== "000") throw new Error(`VTpass would not list ${network} data bundles (code ${body.code}: ${body.response_description ?? ""}).`);
+    const raw = ((body.content as { varations?: unknown[]; variations?: unknown[] } | undefined)?.varations ?? (body.content as { variations?: unknown[] } | undefined)?.variations ?? []) as { variation_code?: string; name?: string; variation_amount?: string | number }[];
+    return raw
+      .filter((v) => v.variation_code && v.name)
+      .map((v) => ({ variationCode: String(v.variation_code), name: String(v.name), priceKobo: Math.round(Number(v.variation_amount ?? 0) * 100) }))
+      .filter((v) => v.priceKobo > 0);
+  }
+
+  async send(input: SendInput): Promise<SendResult> {
     if (input.amountKobo % 100 !== 0) {
-      return { kind: "failed", message: `VTpass sells airtime in whole naira and this payout is ${formatNaira(input.amountKobo)}. This is a bug on our side.` };
+      return { kind: "failed", message: `VTpass sells in whole naira and this payout is ${formatNaira(input.amountKobo)}. This is a bug on our side.` };
     }
     let body: VtpassResponse;
     try {
-      body = await this.call("POST", "/pay", { request_id: input.requestId, serviceID: VTPASS_SERVICE_IDS[input.network], amount: input.amountKobo / 100, phone: input.number });
+      const serviceID = input.bundle ? `${VTPASS_SERVICE_IDS[input.network]}-data` : VTPASS_SERVICE_IDS[input.network];
+      const payload: Record<string, unknown> = { request_id: input.requestId, serviceID, amount: input.amountKobo / 100, phone: input.number };
+      if (input.bundle) {
+        payload["billersCode"] = input.number;
+        payload["variation_code"] = input.bundle.variationCode;
+      }
+      body = await this.call("POST", "/pay", payload);
     } catch (err) {
       return { kind: "unknown", message: `Could not get an answer from VTpass: ${(err as Error).message}. The result will be checked before any retry.` };
     }

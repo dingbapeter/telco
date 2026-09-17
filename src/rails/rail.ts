@@ -14,10 +14,17 @@ export type SendResult =
 
 export type RailHealth = { ok: boolean; message: string; balanceKobo?: number };
 
+// What to deliver: airtime of an amount, or a catalogue bundle the provider
+// knows by its own variation code.
+export type SendInput = { requestId: string; network: NetworkCode; number: string; amountKobo: number; bundle?: { variationCode: string; name: string } | undefined };
+
+export type ProviderBundle = { variationCode: string; name: string; priceKobo: number };
+
 export interface PayoutRail {
   readonly name: string;
   readonly fundingAccount: string;
-  send(input: { requestId: string; network: NetworkCode; number: string; amountKobo: number }): Promise<SendResult>;
+  send(input: SendInput): Promise<SendResult>;
+  listDataBundles(network: NetworkCode): Promise<ProviderBundle[]>;
   check(requestId: string): Promise<SendResult>;
   health(): Promise<RailHealth>;
 }

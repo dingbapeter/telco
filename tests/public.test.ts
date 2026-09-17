@@ -50,7 +50,7 @@ test("a quote sends the sender to a page that says exactly what to dial, to whic
   assert.match(text, /send N500 of MTN airtime to 08039990001/);
   assert.match(text, /\*321\*PIN\*500\*08039990001#/);
   assert.match(text, /Put your MTN transfer PIN where it says PIN/);
-  assert.match(text, /recipient gets N480 on Airtel/);
+  assert.match(text, /recipient gets N480 of airtime on Airtel/);
   assert.match(page.text, /http-equiv="refresh" content="20"/);
   assert.match(text, /Reference TX-/);
 });

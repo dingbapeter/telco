@@ -36,6 +36,8 @@ const SHAPES: Record<SettingKey, Shape> = {
   "pool.floor_kobo": "per_network_kobo",
   "network.daily_transfer_cap_kobo": "per_network_kobo",
   "network.inbound_pattern": "per_network_longtext",
+  "network.data_gift_code": "per_network_text",
+  "network.data_inbound_pattern": "per_network_longtext",
   "network.transfer_code": "per_network_text",
 };
 
