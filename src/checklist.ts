@@ -70,6 +70,21 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
           : { status: "bad", title: `${c} phone has gone quiet`, detail: phone.last_seen_at ? `${phone.label} was last heard from at ${phone.last_seen_at.toISOString()}.` : `${phone.label} has never reported.`, fix: "Check the phone has power, signal and data, the app is open once, and battery saving is off for it. Until then record airtime by hand under Airtime in." },
     );
   }
+  const routes = await getSettingValue(db, "payout.route");
+  for (const c of NETWORK_CODES) {
+    const hasNumber = (numbers.find((r) => r.network_code === c)?.n ?? 0) > 0;
+    if (!hasNumber) continue;
+    const sender = (await db.query<{ label: string; can_send: boolean; pin_set: boolean; fresh: boolean }>("SELECT label, can_send, pin_set, last_seen_at > now() - interval '30 minutes' AS fresh FROM bridge_devices WHERE network_code = $1 AND active ORDER BY can_send DESC, last_seen_at DESC NULLS LAST LIMIT 1", [c])).rows[0];
+    const ready = sender?.can_send && sender.pin_set && sender.fresh;
+    const needed = routes[c] === "phone";
+    checks.push(
+      ready
+        ? { status: "ok", title: `${c} phone can send`, detail: `${sender!.label} can send airtime and gift bundles from its SIM.` }
+        : { status: needed ? "bad" : "warn", title: `${c} phone cannot send`, detail: !sender ? "No phone." : !sender.can_send ? `${sender.label} has not been allowed to make calls.` : !sender.pin_set ? `${sender.label} has no transfer PIN entered.` : `${sender.label} has not reported recently.`, fix: `On the phone: tap "Allow sending" and enter the SIM's transfer PIN. ${needed ? `${c} is routed to the phone, so payouts wait until this is fixed.` : "Until then refunds and pool deliveries on this network are done by hand."}` },
+    );
+  }
+  const openCommands = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM phone_commands WHERE state = 'unknown'")).rows[0]!.n;
+  checks.push(openCommands === 0 ? { status: "ok", title: "No phone command is waiting on a person", detail: "Every dial got a confirmation or a clear failure." } : { status: "bad", title: `${openCommands} phone command(s) got no confirmation`, detail: "Something was dialled and the network did not say what happened.", fix: "Command centre, Phone bridge: read the phone's messages and mark each one as gone through or not." });
   const unparsedMessages = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM bridge_messages WHERE outcome = 'unparsed'")).rows[0]!.n;
   checks.push(
     unparsedMessages === 0

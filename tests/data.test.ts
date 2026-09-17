@@ -111,7 +111,7 @@ test("a sender who wants the other side to get a bundle is told the exact airtim
   assert.equal(await balance(pool, "revenue:fees"), naira(21));
 });
 
-test("a bundle the provider does not know is left for a person to gift from our SIM", async () => {
+test("a bundle the provider does not know is routed to the sending phone, and waits for a person when there is none", async () => {
   await fundPool("wallet:vtpass", naira(10_000));
   await as("founder", (c) => setSetting(c, "founder", "payout.automatic", true));
   const noCode = await as("founder", (c) => upsertBundle(c, { network: "AIRTEL", code: "airtel-2gb", name: "Airtel 2GB", sizeMb: 2048, priceKobo: naira(1_000) }));
@@ -119,11 +119,10 @@ test("a bundle the provider does not know is left for a person to gift from our 
   await as("bridge", (c) => recordInbound(c, "bridge", { networkCode: "MTN", receivingNumber: "08039990001", senderNumber: "08031234567", amountKobo: transfer.requested_kobo, rawText: "r", source: "bridge" }));
   const rail = new VtpassRail({ baseUrl: vt.base, apiKey: vt.keys.api, secretKey: vt.keys.secret, publicKey: vt.keys.public });
   const report = await runPayoutCycle(pool, rail);
-  assert.equal(report.failed, 1);
+  assert.equal(report.sent, 0);
   assert.equal(vt.calls.filter((c) => c.path === "/pay").length, 0);
-  const t = (await getTransfer(pool, transfer.id))!;
-  assert.equal(t.state, "payout_failed");
-  assert.match(t.payout_last_error!, /no provider code.*by hand/);
+  assert.match(report.skipped.join(" "), /the provider does not know this bundle/);
+  assert.equal((await getTransfer(pool, transfer.id))!.state, "inbound_confirmed");
 });
 
 test("a gifted bundle is valued at its catalogue price, booked in the data pool, and paid out as airtime", async () => {

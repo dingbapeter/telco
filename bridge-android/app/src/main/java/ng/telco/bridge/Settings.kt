@@ -22,5 +22,26 @@ class Settings(context: Context) {
 
     val lastAt: Long get() = prefs.getLong("lastAt", 0L)
 
+    // The SIM's transfer PIN. It is used only to fill {pin} in a code the
+    // server sends, on this phone, and is never uploaded.
+    var pin: String
+        get() = prefs.getString("pin", "") ?: ""
+        set(v) = prefs.edit().putString("pin", v.trim()).apply()
+
+    var lastCommand: String
+        get() = prefs.getString("lastCommand", "Nothing sent from this SIM yet.") ?: ""
+        set(v) = prefs.edit().putString("lastCommand", v).apply()
+
+    // Commands this phone has already dialled, so a lost reply can never
+    // make it dial the same one twice.
+    fun wasDialled(id: Long): Boolean = prefs.getStringSet("dialled", emptySet())!!.contains(id.toString())
+    fun markDialled(id: Long) {
+        val set = HashSet(prefs.getStringSet("dialled", emptySet())!!)
+        set.add(id.toString())
+        // Keep the set small; ids only grow.
+        val trimmed = set.map { it.toLong() }.sortedDescending().take(200).map { it.toString() }.toSet()
+        prefs.edit().putStringSet("dialled", trimmed).apply()
+    }
+
     val configured: Boolean get() = serverUrl.startsWith("https://") && token.isNotEmpty()
 }

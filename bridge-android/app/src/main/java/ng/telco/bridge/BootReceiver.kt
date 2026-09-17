@@ -11,6 +11,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             Upload.schedulePeriodic(context)
             Upload.now(context)
+            if (Settings(context).configured) SenderService.start(context)
         }
     }
 }

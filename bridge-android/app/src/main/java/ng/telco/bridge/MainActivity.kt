@@ -46,8 +46,25 @@ class MainActivity : AppCompatActivity() {
             } else {
                 settings.lastResult = "Saved. Connecting."
                 Upload.now(this)
+                SenderService.start(this)
             }
             showStatus()
+        }
+        val pin = findViewById<EditText>(R.id.pin)
+        if (settings.pin.isNotEmpty()) pin.hint = "PIN is saved. Type a new one to replace it."
+        findViewById<Button>(R.id.savePin).setOnClickListener {
+            if (pin.text.isNotEmpty()) {
+                settings.pin = pin.text.toString()
+                pin.setText("")
+                settings.lastCommand = "PIN saved on this phone."
+                Upload.now(this)
+            }
+            showStatus()
+        }
+        findViewById<Button>(R.id.allowSending).setOnClickListener {
+            val wanted = arrayListOf(Manifest.permission.CALL_PHONE)
+            if (android.os.Build.VERSION.SDK_INT >= 33) wanted.add(Manifest.permission.POST_NOTIFICATIONS)
+            ActivityCompat.requestPermissions(this, wanted.toTypedArray(), 2)
         }
         findViewById<Button>(R.id.grantSms).setOnClickListener {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECEIVE_SMS), 1)
@@ -61,6 +78,13 @@ class MainActivity : AppCompatActivity() {
             Upload.now(this)
             showStatus()
         }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Tell the server straight away what this phone can now do.
+        Upload.now(this)
+        showStatus()
     }
 
     override fun onResume() {
@@ -81,6 +105,9 @@ class MainActivity : AppCompatActivity() {
         lines.add(if (smsOk) "Reading text messages: allowed" else "Reading text messages: NOT allowed. Tap the button above.")
         lines.add(if (batteryOk) "Battery saving: off for this app" else "Battery saving: ON. The phone may stop reporting. Tap the button above.")
         lines.add(if (settings.configured) "Server: ${settings.serverUrl}" else "Server: not set up")
+        lines.add(if (Sender.canSend(this)) "Sending from this SIM: allowed" else "Sending from this SIM: NOT allowed. Tap the button above to allow it.")
+        lines.add(if (settings.pin.isNotEmpty()) "Transfer PIN: saved on this phone" else "Transfer PIN: not entered. Enter it above so the phone can send.")
+        lines.add("Last sending result: ${settings.lastCommand}")
         lines.add("Waiting to send: ${Queue.size(this)}")
         val at = if (settings.lastAt > 0) DateFormat.getDateTimeInstance().format(Date(settings.lastAt)) else ""
         lines.add("Last result: ${settings.lastResult} $at")

@@ -6,7 +6,7 @@ import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf } from "./shared.ts";
 
-type Shape = "kobo" | "basis_points" | "minutes" | "boolean" | "count" | "text" | "per_network_kobo" | "per_network_basis_points" | "per_network_text" | "per_network_longtext" | "json";
+type Shape = "kobo" | "basis_points" | "minutes" | "boolean" | "count" | "text" | "per_network_route" | "per_network_kobo" | "per_network_basis_points" | "per_network_text" | "per_network_longtext" | "json";
 
 // How each setting is shown and typed. Kobo settings are entered in naira.
 const SHAPES: Record<SettingKey, Shape> = {
@@ -24,6 +24,8 @@ const SHAPES: Record<SettingKey, Shape> = {
   "payout.auto_approve_max_kobo": "kobo",
   "payout.automatic": "boolean",
   "payout.max_attempts": "count",
+  "payout.route": "per_network_route",
+  "phone.command_timeout_minutes": "minutes",
   "payout.daily_ceiling_kobo": "per_network_kobo",
   "retail.enabled": "boolean",
   "retail.min_kobo": "kobo",
@@ -37,6 +39,7 @@ const SHAPES: Record<SettingKey, Shape> = {
   "network.daily_transfer_cap_kobo": "per_network_kobo",
   "network.inbound_pattern": "per_network_longtext",
   "network.data_gift_code": "per_network_text",
+  "network.sent_pattern": "per_network_longtext",
   "network.data_inbound_pattern": "per_network_longtext",
   "network.transfer_code": "per_network_text",
 };
@@ -85,6 +88,7 @@ export function valueFromForm(key: SettingKey, form: URLSearchParams): unknown {
       return Object.fromEntries(NETWORK_CODES.map((c) => [c, parsePercent(field(`.${c}`))]));
     case "per_network_text":
     case "per_network_longtext":
+    case "per_network_route":
       return Object.fromEntries(NETWORK_CODES.map((c) => [c, field(`.${c}`).trim()]));
     case "json": {
       const text = field().trim();
@@ -122,6 +126,10 @@ function inputs(s: ResolvedSetting<SettingKey>): Html {
       return html`<div class="row">${NETWORK_CODES.map((c) => one(`.${c}`, percentText((v as Record<string, number>)[c]!), `${c}, percent`))}</div>`;
     case "per_network_text":
       return html`<div class="row">${NETWORK_CODES.map((c) => one(`.${c}`, (v as Record<string, string>)[c]!, c))}</div>`;
+    case "per_network_route":
+      return html`<div class="row">${NETWORK_CODES.map(
+        (c) => html`<div><label for="${s.key}.${c}">${c}</label><select id="${s.key}.${c}" name="value.${c}">${["provider", "phone"].map((r) => html`<option value="${r}" ${(v as Record<string, string>)[c] === r ? "selected" : ""}>${r}</option>`)}</select></div>`,
+      )}</div>`;
     case "per_network_longtext":
       return html`${NETWORK_CODES.map(
         (c) => html`<label for="${s.key}.${c}">${c}</label><textarea id="${s.key}.${c}" name="value.${c}" rows="2">${(v as Record<string, string>)[c]!}</textarea>`,

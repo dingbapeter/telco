@@ -5,6 +5,7 @@ import { migrate } from "./migrate.ts";
 import { railFromEnv } from "./rails/rail.ts";
 import { expireQuotes } from "./transfers.ts";
 import { expireOrders } from "./orders.ts";
+import { PhoneRail } from "./sendingphone.ts";
 import { runDeliveryCycle, runPayoutCycle } from "./worker.ts";
 
 const config = loadConfig();
@@ -31,16 +32,16 @@ const timer = setInterval(() => {
 
 // Automatic payouts run only when the provider's keys are in the environment
 // and the switch in the command centre is on. One cycle at a time.
-const rail = railFromEnv();
-console.log(rail ? `Payout provider: ${rail.name}. Automatic payouts follow the command centre setting.` : "No payout provider keys in the environment; payouts are done by hand from the command centre.");
+const rails = { provider: railFromEnv(), phone: new PhoneRail(db) };
+console.log(rails.provider ? `Payout provider: ${rails.provider.name}. Automatic payouts follow the command centre setting.` : "No payout provider keys in the environment; payouts go through the sending phones, or by hand from the command centre.");
 let cycleRunning = false;
 const payoutTimer = setInterval(() => {
-  if (!rail || cycleRunning) return;
+  if (cycleRunning) return;
   cycleRunning = true;
-  runPayoutCycle(db, rail)
+  runPayoutCycle(db, rails)
     .then((r) => {
       if (r.sent || r.checked) console.log(`payouts: sent ${r.sent}, checked ${r.checked}, delivered ${r.delivered}, retried ${r.retried}, failed ${r.failed}`);
-      return runDeliveryCycle(db, rail);
+      return runDeliveryCycle(db, rails);
     })
     .then((r) => {
       if (r.sent || r.checked) console.log(`orders: sent ${r.sent}, checked ${r.checked}, delivered ${r.delivered}, retried ${r.retried}, failed ${r.failed}`);

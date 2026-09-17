@@ -9,4 +9,10 @@
     <string name="battery">Turn off battery saving for this app</string>
     <string name="send_now">Send now</string>
     <string name="status_title">Status</string>
+    <string name="pin">Transfer PIN of the SIM in this phone</string>
+    <string name="pin_hint">Stays on this phone. Never sent anywhere.</string>
+    <string name="save_pin">Save PIN</string>
+    <string name="allow_sending">Allow sending from this SIM</string>
+    <string name="service_title">Telco bridge is on</string>
+    <string name="service_text">Forwarding messages and sending airtime when asked.</string>
 </resources>

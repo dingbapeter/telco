@@ -56,6 +56,8 @@ export type Transfer = {
   in_bundle_id: number | null;
   out_kind: "airtime" | "data";
   out_bundle_id: number | null;
+  refund_rail: string | null;
+  refund_request_id: string | null;
 };
 
 // Where value received lands: airtime in the network's pool, gifted data in

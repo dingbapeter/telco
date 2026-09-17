@@ -4,6 +4,7 @@ import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { formatNaira } from "../money.ts";
 import { getSettingValue, NETWORK_CODES } from "../settings.ts";
+import { describeCommand, resolveByHand, type PhoneCommand } from "../sendingphone.ts";
 import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf, requiredField, when } from "./shared.ts";
@@ -11,6 +12,10 @@ import { actor, csrf, requiredField, when } from "./shared.ts";
 export const STALE_AFTER_MINUTES = 30;
 
 async function bridgePage(req: Request, db: pg.Pool, message?: Html, status = 200, tester?: Html): Promise<{ kind: "html"; status: number; body: string }> {
+  const commands = (await db.query<PhoneCommand & { label: string; bundle_name: string | null }>(
+    `SELECT c.*, d.label, b.name AS bundle_name FROM phone_commands c JOIN bridge_devices d ON d.id = c.device_id LEFT JOIN data_bundles b ON b.id = c.bundle_id
+     WHERE c.state IN ('queued', 'fetched', 'dialled', 'unknown') OR c.resolved_at > now() - interval '1 day' ORDER BY c.id DESC LIMIT 100`,
+  )).rows;
   const [devices, unparsed, patterns] = await Promise.all([
     listDevices(db),
     db.query<{ id: number; label: string; network_code: string; from_address: string; body: string; received_at: Date; note: string | null }>(
@@ -24,18 +29,33 @@ async function bridgePage(req: Request, db: pg.Pool, message?: Html, status = 20
     <p class="muted">One Android phone per network holds our receiving SIM and forwards every text message it gets. A phone is healthy when it has been heard from in the last ${STALE_AFTER_MINUTES} minutes. Set-up steps are in docs/BRIDGE.md in the repository.</p>
     <h2>Phones</h2>
     <div class="scroll"><table>
-      <tr><th>Network</th><th>Label</th><th>Last heard</th><th>App</th><th>Battery</th><th>Waiting on phone</th><th>Active</th><th></th></tr>
+      <tr><th>Network</th><th>Label</th><th>Last heard</th><th>App</th><th>Battery</th><th>Waiting on phone</th><th>Can send</th><th>Active</th><th></th></tr>
       ${devices.map((d) => {
         const stale = !d.last_seen_at || Date.now() - new Date(d.last_seen_at).getTime() > STALE_AFTER_MINUTES * 60_000;
         return html`<tr>
           <td>${d.network_code}</td><td>${d.label}</td>
           <td>${d.last_seen_at ? when(d.last_seen_at) : html`<span class="muted">never</span>`} ${d.active && stale ? html`<span class="state state-held">not heard from</span>` : ""}</td>
           <td>${d.app_version ?? ""}</td><td>${d.battery === null ? "" : `${d.battery}%`}</td><td>${d.queue_size ?? ""}</td>
+          <td>${d.can_send && d.pin_set ? "yes" : d.can_send ? html`<span class="muted">no PIN entered</span>` : html`<span class="muted">no</span>`}</td>
           <td>${d.active ? "yes" : "no"}</td>
           <td><form method="post" action="/admin/bridge/${d.id}/toggle" class="inline">${csrf(req)}<button type="submit" class="secondary">${d.active ? "Pause" : "Activate"}</button></form></td>
         </tr>`;
       })}
       ${devices.length === 0 ? html`<tr><td colspan="8" class="muted">No phones yet. Add one below for each network.</td></tr>` : ""}
+    </table></div>
+    <h2>Things the phones are asked to send</h2>
+    <p class="muted">Every payout, refund and delivery sent from our own SIMs. A command is dialled once; when the network's confirmation does not arrive in time it is left here for you to read the phone and settle.</p>
+    <div class="scroll"><table>
+      <tr><th>Command</th><th>Phone</th><th>What</th><th>For</th><th>State</th><th>Network's reply</th><th></th></tr>
+      ${commands.map(
+        (c) => html`<tr><td>${c.id}</td><td>${c.label}</td><td>${describeCommand(c, c.bundle_name ? ({ name: c.bundle_name } as never) : undefined)}</td><td>${c.purpose}</td>
+          <td>${stateBadgeFor(c.state)}${c.failure ? html`<br><span class="muted">${c.failure}</span>` : ""}</td><td><code>${c.response_text ?? ""}</code></td>
+          <td>${["fetched", "dialled", "unknown"].includes(c.state)
+            ? html`<form method="post" action="/admin/bridge/commands/${c.id}/resolve" class="inline">${csrf(req)}<input type="hidden" name="outcome" value="confirmed"><button type="submit" class="secondary">It went through</button></form>
+              <form method="post" action="/admin/bridge/commands/${c.id}/resolve" class="inline">${csrf(req)}<input type="hidden" name="outcome" value="failed"><button type="submit" class="danger">It did not</button></form>`
+            : ""}</td></tr>`,
+      )}
+      ${commands.length === 0 ? html`<tr><td colspan="7" class="muted">Nothing sent from the phones yet.</td></tr>` : ""}
     </table></div>
     <h2>Add a phone</h2>
     <form method="post" action="/admin/bridge" class="panel">${csrf(req)}
@@ -67,7 +87,23 @@ async function bridgePage(req: Request, db: pg.Pool, message?: Html, status = 20
   return { kind: "html", status, body: page({ title: "Phone bridge", admin: req.admin, current: "/admin/bridge", body }) };
 }
 
+function stateBadgeFor(state: string): Html {
+  const cls = state === "confirmed" ? "state-completed" : state === "failed" || state === "unknown" ? "state-held" : "state-paying_out";
+  return html`<span class="state ${cls}">${state}</span>`;
+}
+
 export function registerBridgeAdmin(app: App): void {
+  app.post("/admin/bridge/commands/:id/resolve", async (req, db) => {
+    try {
+      const outcome = req.form.get("outcome") === "confirmed" ? "confirmed" : "failed";
+      const c = await withActor(actor(req.admin), (cl) => resolveByHand(cl, actor(req.admin), Number(req.query.get("id")), outcome, `${actor(req.admin)} read the phone`), db);
+      return bridgePage(req, db, notice("ok", `Command ${c.id} is marked as ${outcome === "confirmed" ? "gone through" : "not gone through"}. The transfer or order it was for moves on within a minute.`));
+    } catch (err) {
+      if (err instanceof UserFacingError) return bridgePage(req, db, notice("problem", err.message), 400);
+      throw err;
+    }
+  });
+
   app.get("/admin/bridge", (req, db) => bridgePage(req, db));
 
   app.post("/admin/bridge", async (req, db) => {

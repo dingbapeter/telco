@@ -61,6 +61,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     .put("appVersion", BuildConfig.VERSION_NAME)
                     .put("battery", battery(ctx))
                     .put("queueSize", Queue.size(ctx))
+                    .put("canSend", Sender.canSend(ctx))
+                    .put("pinSet", settings.pin.isNotEmpty())
                 val (status, response) = post(settings.serverUrl + "/bridge/messages", settings.token, body.toString())
                 when (status) {
                     200 -> {

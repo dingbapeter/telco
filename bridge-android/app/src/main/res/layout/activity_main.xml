@@ -60,6 +60,36 @@
             android:layout_height="wrap_content"
             android:text="@string/battery" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/pin" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/pin_hint"
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/pin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="numberPassword" />
+
+        <Button
+            android:id="@+id/savePin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/save_pin" />
+
+        <Button
+            android:id="@+id/allowSending"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/allow_sending" />
+
         <Button
             android:id="@+id/sendNow"
             android:layout_width="match_parent"

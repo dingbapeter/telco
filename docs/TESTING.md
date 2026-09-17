@@ -205,6 +205,34 @@ pattern itself also refuses an amount followed by GB or MB, so the message
 still fell through to the data reader. Two independent defences, both
 kept. The mutation now switches both off together, and the suite goes red.
 
+## Sending phone suite (`tests/sendingphone.test.ts`)
+
+Drives the server side of the sending phone the way the app does: fetching
+commands, reporting replies, the network's text message settling a command,
+refunds, bundles gifted from a data pool, and settling by hand. Checked on
+17 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| A phone command handed out twice | Red |
+| A confirmation for a different number accepted | Red, after the gap below was closed |
+| The PIN placeholder filled in on the server | Red |
+| A command with no confirmation read as delivered | Red |
+| A phone that has gone quiet still used to send | Red |
+| A refund queued with no phone to send it | Red |
+| A final refusal from the network retried | Red |
+| The network's text message not used to settle a command | Red |
+
+Mutation that did not turn the suite red, and what was found: every test
+reported a confirmation for the right number, so a server that accepted a
+confirmation for any number passed. A gap. A test now reports a
+confirmation naming a different number, by reply and by text message, and
+checks the command stays open.
+
+The app itself is compiled by CI. Dialling a real network code cannot be
+tested here; the check a person does with a small real transfer is in
+docs/BRIDGE.md.
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

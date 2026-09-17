@@ -92,6 +92,10 @@ function boolean(): Validator<boolean> {
   return (value) => (typeof value === "boolean" ? { ok: true, value } : { ok: false, reason: "must be on or off" });
 }
 
+function oneOf<T extends string>(choices: readonly T[]): Validator<T> {
+  return (value) => (typeof value === "string" && (choices as readonly string[]).includes(value) ? { ok: true, value: value as T } : { ok: false, reason: `must be one of ${choices.join(", ")}` });
+}
+
 function text(maxLength: number): Validator<string> {
   return (value) =>
     typeof value === "string" && value.length <= maxLength
@@ -241,6 +245,25 @@ export const SETTINGS = {
     validate: intBetween(1, 10, "count"),
     format: (v) => `${v}`,
   }),
+  "payout.route": define({
+    key: "payout.route",
+    group: "Guardrails",
+    label: "How each network is paid out",
+    description:
+      "Per destination network: provider means through the top-up provider from its wallet; phone means from our own SIM in the sending phone, which drains that network's pool. Refunds and gifted bundles always go through the phone.",
+    fallback: Object.fromEntries(NETWORK_CODES.map((c) => [c, "provider"])) as PerNetwork<"provider" | "phone">,
+    validate: perNetwork(oneOf(["provider", "phone"] as const)),
+    format: each((v) => v),
+  }),
+  "phone.command_timeout_minutes": define({
+    key: "phone.command_timeout_minutes",
+    group: "Guardrails",
+    label: "Sending phone timeout",
+    description: "How long to wait for a phone to dial and for the network to confirm before the item is left for a person.",
+    fallback: 10,
+    validate: intBetween(2, 120, "minutes"),
+    format: (v) => `${v} minutes`,
+  }),
   "payout.daily_ceiling_kobo": define({
     key: "payout.daily_ceiling_kobo",
     group: "Guardrails",
@@ -367,6 +390,16 @@ export const SETTINGS = {
     label: "How to read the network's data received message",
     description:
       "A pattern with (?<size>...) for the amount of data, like 1GB or 500MB, and (?<sender>...) for the sender's number, matched against the message the network sends when data is gifted to us. Empty means the built-in pattern. Test it on the Phone bridge page.",
+    fallback: emptyPerNetwork,
+    validate: perNetwork(text(400)),
+    format: each((v) => (v === "" ? "built-in" : v)),
+  }),
+  "network.sent_pattern": define({
+    key: "network.sent_pattern",
+    group: "Networks",
+    label: "How to read the network's airtime sent confirmation",
+    description:
+      "A pattern matched against the network's reply or text message after our SIM sends airtime or gifts data, with (?<number>...) for the number it went to and, where present, (?<amount>...). Empty means the built-in pattern, which looks for words like sent, transferred or successful with the number.",
     fallback: emptyPerNetwork,
     validate: perNetwork(text(400)),
     format: each((v) => (v === "" ? "built-in" : v)),

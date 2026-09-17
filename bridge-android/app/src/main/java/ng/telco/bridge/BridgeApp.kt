@@ -6,5 +6,6 @@ class BridgeApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Upload.schedulePeriodic(this)
+        if (Settings(this).configured) SenderService.start(this)
     }
 }

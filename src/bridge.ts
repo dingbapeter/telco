@@ -6,6 +6,7 @@ import { parseSizeMb } from "./bundles.ts";
 import { parseNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
 import { getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
+import { confirmFromMessage } from "./sendingphone.ts";
 import { recordInbound, type InboundOutcome } from "./transfers.ts";
 
 export type Device = {
@@ -18,6 +19,8 @@ export type Device = {
   app_version: string | null;
   battery: number | null;
   queue_size: number | null;
+  can_send: boolean;
+  pin_set: boolean;
 };
 
 function hashToken(token: string): string {
@@ -32,7 +35,7 @@ export async function createDevice(db: Queryable, label: string, network: string
   if (!label.trim()) throw new UserFacingError("missing_label", "Give the phone a label you will recognise, like MTN phone in the office.");
   const token = "brg_" + randomBytes(24).toString("base64url");
   const { rows } = await db.query<Device>(
-    "INSERT INTO bridge_devices (label, network_code, token_hash) VALUES ($1, $2, $3) RETURNING id, label, network_code, active, created_at, last_seen_at, app_version, battery, queue_size",
+    "INSERT INTO bridge_devices (label, network_code, token_hash) VALUES ($1, $2, $3) RETURNING id, label, network_code, active, created_at, last_seen_at, app_version, battery, queue_size, can_send, pin_set",
     [label.trim(), code, hashToken(token)],
   );
   return { device: rows[0]!, token };
@@ -41,23 +44,28 @@ export async function createDevice(db: Queryable, label: string, network: string
 export async function deviceFromToken(db: Queryable, token: string | undefined): Promise<Device | undefined> {
   if (!token) return undefined;
   const { rows } = await db.query<Device>(
-    "SELECT id, label, network_code, active, created_at, last_seen_at, app_version, battery, queue_size FROM bridge_devices WHERE token_hash = $1 AND active",
+    "SELECT id, label, network_code, active, created_at, last_seen_at, app_version, battery, queue_size, can_send, pin_set FROM bridge_devices WHERE token_hash = $1 AND active",
     [hashToken(token)],
   );
   return rows[0];
 }
 
-export async function heartbeat(db: Queryable, deviceId: number, status: { appVersion?: string | undefined; battery?: number; queueSize?: number }): Promise<void> {
-  await db.query("UPDATE bridge_devices SET last_seen_at = now(), app_version = coalesce($2, app_version), battery = coalesce($3, battery), queue_size = coalesce($4, queue_size) WHERE id = $1", [
-    deviceId,
-    status.appVersion ?? null,
-    Number.isInteger(status.battery) ? status.battery : null,
-    Number.isInteger(status.queueSize) ? status.queueSize : null,
-  ]);
+export async function heartbeat(db: Queryable, deviceId: number, status: { appVersion?: string | undefined; battery?: number; queueSize?: number; canSend?: boolean | undefined; pinSet?: boolean | undefined }): Promise<void> {
+  await db.query(
+    "UPDATE bridge_devices SET last_seen_at = now(), app_version = coalesce($2, app_version), battery = coalesce($3, battery), queue_size = coalesce($4, queue_size), can_send = coalesce($5, can_send), pin_set = coalesce($6, pin_set) WHERE id = $1",
+    [
+      deviceId,
+      status.appVersion ?? null,
+      Number.isInteger(status.battery) ? status.battery : null,
+      Number.isInteger(status.queueSize) ? status.queueSize : null,
+      typeof status.canSend === "boolean" ? status.canSend : null,
+      typeof status.pinSet === "boolean" ? status.pinSet : null,
+    ],
+  );
 }
 
 export async function listDevices(db: Queryable): Promise<Device[]> {
-  const { rows } = await db.query<Device>("SELECT id, label, network_code, active, created_at, last_seen_at, app_version, battery, queue_size FROM bridge_devices ORDER BY network_code, id");
+  const { rows } = await db.query<Device>("SELECT id, label, network_code, active, created_at, last_seen_at, app_version, battery, queue_size, can_send, pin_set FROM bridge_devices ORDER BY network_code, id");
   return rows;
 }
 
@@ -145,6 +153,9 @@ export async function ingestMessage(db: pg.PoolClient, device: Device, receiving
     return transferReference ? { outcome, messageId: row.id, transferReference } : { outcome, messageId: row.id };
   };
 
+  // A reply to something this phone sent settles that command first.
+  const settled = await confirmFromMessage(db, device.id, msg.body);
+  if (settled) return finish("ignored", null, `Confirmed phone command ${settled.id}: ${settled.kind} to ${settled.number}.`);
   if (!receivingNumber) return finish("unparsed", null, `No active receiving number on ${device.network_code} is known for this phone. Add one under Receiving numbers.`);
   const [patterns, dataPatterns] = await getSettingValues(db, ["network.inbound_pattern", "network.data_inbound_pattern"] as const);
   // A message that names a data size is read as data first, so "1GB" is

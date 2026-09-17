@@ -176,11 +176,10 @@ online payment. Test keys are flagged on the checklist.
 
 ### 19. A phone that sends airtime by itself
 
-Today the pools drain only through deliveries a person makes from our SIM.
-The bridge phone could dial the network's transfer code itself, which
-Android allows, so orders and refunds on a network could go out without a
-person. **Recommendation:** build it after the first month of real
-orders, once we know how often a person actually has to do this.
+Built, at the founder's request; see docs/BRIDGE.md. Two things are
+yours when the phones are in service: allow sending and enter the SIM's
+PIN on each phone, and choose under Settings, Guardrails which networks
+pay out from the phone rather than the provider.
 
 ### 20. The product's name
 

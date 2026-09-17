@@ -57,10 +57,46 @@ that battery saving is off for it. Open the app and tap "Send now"; the
 status line says what happened. Until it is back, record airtime by hand
 under Airtime in, from the messages on the phone's screen.
 
+## Sending from the phone
+
+The same phone can send airtime and gift bundles from its SIM, on the
+server's instruction: payouts on a network you route to the phone under
+Settings, Guardrails; every refund; and every bundle or airtime delivered
+from a pool. To turn it on, on the phone:
+
+1. Tap "Allow sending from this SIM" and allow phone calls. Android needs
+   that permission to dial a code. On newer phones it also asks to show a
+   notification; allow it, because the app keeps a small notice on screen
+   while it is on duty.
+2. Enter the SIM's transfer PIN and tap "Save PIN". The PIN stays on the
+   phone. The server sends each code with the PIN left blank and the phone
+   fills it in before dialling. Nobody else ever sees it.
+3. The status shows "Sending from this SIM: allowed" and "Transfer PIN:
+   saved". In the command centre the phone shows "Can send: yes", and the
+   checklist line for sending on that network turns green.
+
+What happens on each send: the server queues a command with the code, the
+number and the amount; the phone fetches it once, dials it, and reports the
+network's reply. A reply that reads as a confirmation for that number, or
+the network's own text message afterwards, completes the payout or refund.
+A reply that reads as a final refusal leaves the item for a person with the
+network's words. A busy network is retried after a wait. A command that
+gets no confirmation within the timeout is never dialled again: it is left
+on the Phone bridge page for a person to read the phone and settle.
+
+Some networks answer a transfer code with a menu asking for confirmation.
+The phone can only make one request per code; where a network does that,
+the confirmation still comes by text message and settles the command. If
+a network's reply is not being read, paste it into the pattern tester on
+the Phone bridge page and set the "sent confirmation" pattern for that
+network under Settings, Networks.
+
 ## What the app does and does not do
 
 - It reads text messages as they arrive and forwards them. It does not send
   messages, read contacts, or use the internet for anything else.
+- When sending is allowed and a PIN is saved, it dials the codes the server
+  asks for, each once, and reports the reply. It dials nothing else.
 - It keeps messages in a file until the server has accepted them, so a
   dead spot or a restart loses nothing. The same message sent twice is
   counted once by the server.

@@ -23,6 +23,8 @@ export type ProviderBundle = { variationCode: string; name: string; priceKobo: n
 export interface PayoutRail {
   readonly name: string;
   readonly fundingAccount: string;
+  // Rails that pay from a different account per network or per kind.
+  fundingAccountFor?(network: NetworkCode, bundle?: { id: number } | undefined): string;
   send(input: SendInput): Promise<SendResult>;
   listDataBundles(network: NetworkCode): Promise<ProviderBundle[]>;
   check(requestId: string): Promise<SendResult>;
