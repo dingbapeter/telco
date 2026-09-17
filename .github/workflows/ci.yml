@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  prose:
+    name: Prose rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Em dashes and banned words in tracked files
+        run: scripts/check-prose.sh
+      - name: Em dashes in commit messages
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            scripts/check-commit-messages.sh "${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            scripts/check-commit-messages.sh "${{ github.event.before }}..${{ github.sha }}"
+          else
+            scripts/check-commit-messages.sh "HEAD"
+          fi

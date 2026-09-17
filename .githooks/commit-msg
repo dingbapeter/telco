@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Rejects a commit message containing an em dash before it is written.
+# Enable once per clone with: git config core.hooksPath .githooks
+em_dash=$(printf '\xe2\x80\x94')
+if LC_ALL=C.UTF-8 grep -qF -- "$em_dash" "$1"; then
+  echo "Commit message contains an em dash. Use a full stop or a comma."
+  exit 1
+fi
