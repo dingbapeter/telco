@@ -51,10 +51,12 @@ export type PageOptions = {
 const NAV: { href: string; label: string }[] = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/transfers", label: "Transfers" },
+  { href: "/admin/orders", label: "Orders" },
   { href: "/admin/inbound", label: "Airtime in" },
   { href: "/admin/pools", label: "Pools" },
   { href: "/admin/numbers", label: "Receiving numbers" },
   { href: "/admin/bridge", label: "Phone bridge" },
+  { href: "/admin/settlement", label: "Settlement" },
   { href: "/admin/settings", label: "Settings" },
   { href: "/admin/checklist", label: "Launch checklist" },
   { href: "/admin/audit", label: "Audit log" },

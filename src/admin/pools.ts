@@ -13,6 +13,8 @@ import { actor, csrf, money, nairaField, requiredField, when } from "./shared.ts
 const FUNDABLE = [
   ...NETWORK_CODES.map((c) => ({ code: `pool:${c}`, label: `${c} pool (airtime on our ${c} SIM)` })),
   { code: "wallet:vtpass", label: "Provider wallet (money with VTpass)" },
+  { code: "cash:bank", label: "Bank account (money)" },
+  { code: "cash:paystack", label: "Paystack balance (money not yet settled to the bank)" },
 ];
 
 async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200): Promise<{ kind: "html"; status: number; body: string }> {

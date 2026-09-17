@@ -153,6 +153,31 @@ app would need the permission to send messages. **Recommendation:** yes,
 after the first real transfers, once the pattern of what senders ask is
 known.
 
+### 17. The networks: licence, aggregator, negotiation
+
+See docs/TELCOS.md. Three decisions are yours and none blocks launch:
+whether to apply for a VAS licence now or operate under an aggregator's;
+which aggregator to approach for airtime charging and top-up; and the
+terms you will and will not accept, since a content-style revenue share
+would consume the fee. **Recommendation:** operate under an aggregator's
+licence first, approach the aggregator with three months of real volume
+from the rails, and hold the line that this is a transfer product.
+
+### 18. Payment provider for retail
+
+Paystack is built in on my recommendation: bank transfer, card and USSD,
+good documentation. Bank transfer by hand works without it. **Needed from
+you:** a Paystack account and its secret key on the server, when you want
+online payment. Test keys are flagged on the checklist.
+
+### 19. A phone that sends airtime by itself
+
+Today the pools drain only through deliveries a person makes from our SIM.
+The bridge phone could dial the network's transfer code itself, which
+Android allows, so orders and refunds on a network could go out without a
+person. **Recommendation:** build it after the first month of real
+orders, once we know how often a person actually has to do this.
+
 ## Decided
 
 - **17 September 2026. Country and networks.** Nigeria, naira, MTN,

@@ -4,7 +4,8 @@ import { closePool, getPool } from "./db.ts";
 import { migrate } from "./migrate.ts";
 import { railFromEnv } from "./rails/rail.ts";
 import { expireQuotes } from "./transfers.ts";
-import { runPayoutCycle } from "./worker.ts";
+import { expireOrders } from "./orders.ts";
+import { runDeliveryCycle, runPayoutCycle } from "./worker.ts";
 
 const config = loadConfig();
 const db = getPool();
@@ -19,12 +20,13 @@ try {
   client.release();
 }
 
-const app = buildApp(db, { secureCookies: config.secureCookies });
+const app = buildApp(db, { secureCookies: config.secureCookies, publicBaseUrl: config.publicBaseUrl });
 const server = app.listen(config.port, config.host);
 console.log(`Command centre listening on http://${config.host}:${config.port}/admin`);
 
 const timer = setInterval(() => {
   expireQuotes(db).catch((err: unknown) => console.error("expiring quotes failed", err));
+  expireOrders(db).catch((err: unknown) => console.error("expiring orders failed", err));
 }, 60_000);
 
 // Automatic payouts run only when the provider's keys are in the environment
@@ -38,6 +40,10 @@ const payoutTimer = setInterval(() => {
   runPayoutCycle(db, rail)
     .then((r) => {
       if (r.sent || r.checked) console.log(`payouts: sent ${r.sent}, checked ${r.checked}, delivered ${r.delivered}, retried ${r.retried}, failed ${r.failed}`);
+      return runDeliveryCycle(db, rail);
+    })
+    .then((r) => {
+      if (r.sent || r.checked) console.log(`orders: sent ${r.sent}, checked ${r.checked}, delivered ${r.delivered}, retried ${r.retried}, failed ${r.failed}`);
     })
     .catch((err: unknown) => console.error("payout cycle failed", err))
     .finally(() => {

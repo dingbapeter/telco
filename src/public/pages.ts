@@ -16,7 +16,7 @@ const lagosTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", h
 // is a few kilobytes of HTML and one cached stylesheet. No script is needed
 // for anything; the one small script only fills in the network from the
 // number as a convenience.
-function shell(title: string, body: Html, options: { refreshSeconds?: number } = {}): string {
+export function shell(title: string, body: Html, options: { refreshSeconds?: number } = {}): string {
   return (
     "<!doctype html>" +
     html`<html lang="en-NG">
@@ -30,7 +30,7 @@ ${options.refreshSeconds ? html`<meta http-equiv="refresh" content="${options.re
 <body>
 <header class="top"><a class="brand" href="/">Telco</a><span class="tag">Move airtime between networks</span></header>
 <main class="main">${body}</main>
-<footer class="foot"><a href="/">Start a transfer</a> · <a href="/#status">Check a transfer</a></footer>
+<footer class="foot"><a href="/">Move airtime</a> · <a href="/buy">Buy airtime</a> · <a href="/#status">Check a transfer</a></footer>
 </body>
 </html>`.text
   );

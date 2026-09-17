@@ -31,3 +31,4 @@ button.secondary { background: #fff; color: var(--accent); }
 .ref { margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 0.8rem; }
 .ref dt { color: var(--muted); font-size: 0.9rem; }
 .ref dd { margin: 0 0 0.6rem; }
+.deal { background: var(--ok-wash); border-left: 4px solid var(--ok); padding: 0.6rem 0.8rem; }

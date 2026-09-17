@@ -161,6 +161,24 @@ can give. Checked on 17 September 2026.
 | The wrong service id for 9mobile | Red |
 | The wallet balance not checked before sending | Red |
 
+## Retail suite (`tests/retail.test.ts`)
+
+Runs stand-ins for Paystack and VTpass and drives orders from the buyer's
+page through payment, delivery, holds and refunds, and the settlement
+page. Checked on 17 September 2026, all nine breakages caught first time.
+
+| Breakage introduced | Result |
+| --- | --- |
+| A webhook believed without checking its signature | Red |
+| The same webhook processed again on repeat | Red |
+| The return from Paystack trusted without reading the result | Red |
+| An underpayment accepted as paid | Red |
+| The discount not taken off the price | Red |
+| A sale created while selling is off | Red |
+| A settlement payment above what is owed accepted | Red |
+| Paystack's fee not booked | Red |
+| Buyer numbers shown in full on the order page | Red |
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

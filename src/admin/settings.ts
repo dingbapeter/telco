@@ -6,7 +6,7 @@ import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf } from "./shared.ts";
 
-type Shape = "kobo" | "basis_points" | "minutes" | "boolean" | "count" | "per_network_kobo" | "per_network_basis_points" | "per_network_text" | "per_network_longtext" | "json";
+type Shape = "kobo" | "basis_points" | "minutes" | "boolean" | "count" | "text" | "per_network_kobo" | "per_network_basis_points" | "per_network_text" | "per_network_longtext" | "json";
 
 // How each setting is shown and typed. Kobo settings are entered in naira.
 const SHAPES: Record<SettingKey, Shape> = {
@@ -25,6 +25,14 @@ const SHAPES: Record<SettingKey, Shape> = {
   "payout.automatic": "boolean",
   "payout.max_attempts": "count",
   "payout.daily_ceiling_kobo": "per_network_kobo",
+  "retail.enabled": "boolean",
+  "retail.min_kobo": "kobo",
+  "retail.max_kobo": "kobo",
+  "retail.discount_basis_points": "per_network_basis_points",
+  "retail.order_window_minutes": "minutes",
+  "retail.bank_name": "text",
+  "retail.bank_account_number": "text",
+  "retail.bank_account_name": "text",
   "pool.floor_kobo": "per_network_kobo",
   "network.daily_transfer_cap_kobo": "per_network_kobo",
   "network.inbound_pattern": "per_network_longtext",
@@ -67,6 +75,8 @@ export function valueFromForm(key: SettingKey, form: URLSearchParams): unknown {
       return parseWhole(field(), label);
     case "boolean":
       return field() === "on";
+    case "text":
+      return field().trim();
     case "per_network_kobo":
       return Object.fromEntries(NETWORK_CODES.map((c) => [c, parseNairaOrThrow(field(`.${c}`), `${label} for ${c}`)]));
     case "per_network_basis_points":
@@ -100,6 +110,8 @@ function inputs(s: ResolvedSetting<SettingKey>): Html {
       return one("", String(v as number), "Minutes");
     case "count":
       return one("", String(v as number), "Number of times");
+    case "text":
+      return one("", v as string, "Text");
     case "boolean":
       return html`<label for="${s.key}">Setting</label><select id="${s.key}" name="value"><option value="off" ${v ? "" : "selected"}>Off</option><option value="on" ${v ? "selected" : ""}>On</option></select>`;
     case "per_network_kobo":

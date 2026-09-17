@@ -5,15 +5,19 @@ import { registerChecklist } from "./admin/checklist.ts";
 import { registerInbound } from "./admin/inbound.ts";
 import { registerLogin } from "./admin/login.ts";
 import { registerNumbers } from "./admin/numbers.ts";
+import { registerOrders } from "./admin/orders.ts";
 import { registerOverview } from "./admin/overview.ts";
+import { registerSettlement } from "./admin/settlement.ts";
 import { registerPools } from "./admin/pools.ts";
 import { registerSettings } from "./admin/settings.ts";
 import { registerTransfers } from "./admin/transfers.ts";
+import { paystackFromEnv, type PaystackProvider } from "./payments/paystack.ts";
+import { registerBuy } from "./public/buy.ts";
 import { registerPublic } from "./public/pages.ts";
 import { registerBridge } from "./web/bridge.ts";
 import { App } from "./web/http.ts";
 
-export function buildApp(db: pg.Pool, options: { secureCookies: boolean }): App {
+export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicBaseUrl?: string; paystack?: PaystackProvider | undefined }): App {
   const app = new App(db);
   app.get("/health", async (_req, pool) => {
     // Knocks on the database rather than reporting that a connection string exists.
@@ -31,6 +35,9 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean }): App 
   registerBridgeAdmin(app);
   registerAudit(app);
   registerBridge(app);
+  registerOrders(app);
+  registerSettlement(app);
   registerPublic(app);
+  registerBuy(app, { paystack: options.paystack ?? paystackFromEnv(), publicBaseUrl: options.publicBaseUrl ?? "http://localhost:3000" });
   return app;
 }

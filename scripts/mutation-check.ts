@@ -66,6 +66,15 @@ const MUTATIONS: Mutation[] = [
   { name: "request id without the Lagos timestamp", file: "src/rails/vtpass.ts", find: "return `${parts[\"year\"]}${parts[\"month\"]}${parts[\"day\"]}${parts[\"hour\"]}${parts[\"minute\"]}${randomBytes(6).toString(\"hex\")}`;", replace: "return randomBytes(12).toString(\"hex\");", suite: "tests/rails.test.ts" },
   { name: "wrong service id for 9mobile", file: "src/rails/vtpass.ts", find: "\"9MOBILE\": \"etisalat\"", replace: "\"9MOBILE\": \"9mobile\"", suite: "tests/rails.test.ts" },
   { name: "wallet balance not checked before sending", file: "src/transfers.ts", find: "  if (available < payout) {", replace: "  if (false) {", suite: "tests/rails.test.ts" },
+  { name: "webhook signature not checked", file: "src/public/buy.ts", find: "if (!options.paystack.verifySignature(req.rawBody, req.raw.headers[\"x-paystack-signature\"] as string | undefined)) {", replace: "if (false) {", suite: "tests/retail.test.ts" },
+  { name: "webhook processed again on repeat", file: "src/public/buy.ts", find: "VALUES ('paystack', $1, $2, $3::jsonb) ON CONFLICT DO NOTHING RETURNING id", replace: "VALUES ('paystack', $1, $2 || clock_timestamp()::text, $3::jsonb) RETURNING id", suite: "tests/retail.test.ts" },
+  { name: "return from Paystack trusted without verifying", file: "src/public/buy.ts", find: "if (v.status === \"success\") {", replace: "if (true) {", suite: "tests/retail.test.ts" },
+  { name: "underpayment accepted as paid", file: "src/orders.ts", find: "const short = p.paidKobo < current.price_kobo;", replace: "const short = false;", suite: "tests/retail.test.ts" },
+  { name: "discount not taken off the price", file: "src/orders.ts", find: "return { faceKobo, discountKobo, priceKobo: faceKobo - discountKobo };", replace: "return { faceKobo, discountKobo, priceKobo: faceKobo };", suite: "tests/retail.test.ts" },
+  { name: "sale booked while selling is off", file: "src/orders.ts", find: "if (!enabled) throw new UserFacingError(\"retail_off\"", replace: "if (false) throw new UserFacingError(\"retail_off\"", suite: "tests/retail.test.ts" },
+  { name: "settlement payment above what is owed accepted", file: "src/admin/settlement.ts", find: "if (amount > owed) throw new UserFacingError(\"overpaid\"", replace: "if (false) throw new UserFacingError(\"overpaid\"", suite: "tests/retail.test.ts" },
+  { name: "payment fee not booked", file: "src/orders.ts", find: "if (p.feeKobo > 0) postings.push({ account: \"expense:payment_fees\", amountKobo: p.feeKobo });", replace: "postings[0]!.amountKobo = p.paidKobo;", suite: "tests/retail.test.ts" },
+  { name: "buyer numbers shown in full on the order page", file: "src/public/buy.ts", find: "<p>For ${mask(o.recipient_number)}.", replace: "<p>For ${o.recipient_number}.", suite: "tests/retail.test.ts" },
   { name: "phone numbers with a country code rejected", file: "src/phone.ts", find: "if (digits.length === 13 && digits.startsWith(\"234\")) local = \"0\" + digits.slice(3);", replace: "if (false) local = digits;", suite: "tests/phone.test.ts" },
 ];
 

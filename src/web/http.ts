@@ -13,6 +13,7 @@ export type Request = {
   path: string;
   query: URLSearchParams;
   form: URLSearchParams;
+  rawBody: string;
   cookies: Record<string, string>;
   admin?: Admin | undefined;
   csrfToken?: string | undefined;
@@ -77,12 +78,13 @@ export class App {
     if (req.method === "GET" && url.pathname.startsWith("/static/")) return this.serveStatic(url.pathname, res);
 
     const cookies = parseCookies(req.headers.cookie);
-    const form = req.method === "POST" ? await readForm(req) : new URLSearchParams();
+    const { form, rawBody } = req.method === "POST" ? await readForm(req) : { form: new URLSearchParams(), rawBody: "" };
     const request: Request = {
       method: req.method ?? "GET",
       path: url.pathname,
       query: url.searchParams,
       form,
+      rawBody,
       cookies,
       ip: req.socket.remoteAddress ?? "",
       raw: req,
@@ -147,7 +149,7 @@ function parseCookies(header: string | undefined): Record<string, string> {
   return out;
 }
 
-async function readForm(req: IncomingMessage): Promise<URLSearchParams> {
+async function readForm(req: IncomingMessage): Promise<{ form: URLSearchParams; rawBody: string }> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -159,11 +161,17 @@ async function readForm(req: IncomingMessage): Promise<URLSearchParams> {
   const text = Buffer.concat(chunks).toString("utf8");
   if (type.startsWith("application/json")) {
     const params = new URLSearchParams();
-    const parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      // A body that is not JSON is left for the handler to reject with the
+      // raw text in hand.
+    }
     for (const [k, v] of Object.entries(parsed)) params.set(k, typeof v === "string" ? v : JSON.stringify(v));
-    return params;
+    return { form: params, rawBody: text };
   }
-  return new URLSearchParams(text);
+  return { form: new URLSearchParams(text), rawBody: text };
 }
 
 const SECURITY_HEADERS = {
