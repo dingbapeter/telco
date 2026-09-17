@@ -1,0 +1,10 @@
+# Caddy in front of the service: automatic https, one line per domain.
+# Install with: sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+# Replace your.domain with the real domain before copying.
+your.domain {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+	}
+}

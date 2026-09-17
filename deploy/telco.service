@@ -1,0 +1,27 @@
+# systemd unit for the Telco service. Install with:
+#   sudo cp deploy/telco.service /etc/systemd/system/telco.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now telco
+[Unit]
+Description=Telco airtime switch
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=telco
+Group=telco
+WorkingDirectory=/srv/telco
+# Secrets live in this file, readable by the telco user only. Never in git.
+EnvironmentFile=/etc/telco/telco.env
+ExecStart=/usr/bin/node src/main.ts
+Restart=always
+RestartSec=3
+# The service binds to localhost; Caddy in front terminates https.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/srv/telco
+
+[Install]
+WantedBy=multi-user.target
