@@ -1,0 +1,24 @@
+{
+  "name": "telco",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Airtime and data transfer between Nigerian mobile networks",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "migrate": "node src/migrate.ts",
+    "test": "scripts/test.sh",
+    "check": "scripts/check-prose.sh && npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.0"
+  }
+}
