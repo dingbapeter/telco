@@ -50,6 +50,40 @@ Airtel, on Glo, on 9mobile.
 The user sees one product: "move airtime from MTN to Airtel". They never see
 the layers.
 
+## One transfer, start to finish, with the money
+
+The founder asked how we deduct from one network and pay another with no
+agreement in place. We do neither. Five hundred naira from MTN to Airtel,
+fee twenty:
+
+1. The sender dials MTN's own share and sell code with our MTN number in
+   it. MTN moves 500 naira of airtime from the sender's line to our MTN
+   SIM. MTN sees one subscriber sending to another.
+2. MTN texts our SIM "You have received N500 from 0803...", the way it
+   tells any subscriber. Our phone reads that message and forwards it to
+   the server. That is the whole of how we hear from a network: no API,
+   no agreement. The network talks to its own subscriber, which is us.
+3. We hold 500 naira of MTN airtime and owe the recipient 480 of Airtel
+   airtime. We pay it through VTpass, a licensed vendor we are a customer
+   of, which takes about 466 naira from our prepaid wallet and keeps the
+   difference as the commission it pays us; or from our own Airtel SIM,
+   which the phone dials for us.
+4. Our gain is real, the fee and the provider's commission, but it sits
+   as MTN airtime on our SIM. That is the pool.
+
+The fee becomes money two ways: a transfer in the other direction pays out
+of the pool, so opposite flows cost nothing and both fees stay with us;
+and selling the pool on the Buy airtime page, where a buyer pays cash and
+our MTN phone sends them MTN airtime. Cash in the bank and Paystack, less
+what went into the VTpass wallet and SIM float, is the business's money,
+and the Pools page shows every kobo of it.
+
+What we are to a network is a subscriber whose SIM receives and sends more
+transfers than most, under a feature offered for personal use with daily
+caps. A SIM that receives thousands of transfers can be barred. That is
+the honest limit of running without the networks, and why the caps,
+several SIMs per network, and the settlement statement exist.
+
 ## The pools, and why they must be kept in balance
 
 Each network has a pool: the airtime we hold there. Every MTN to Airtel
