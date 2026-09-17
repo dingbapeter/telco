@@ -184,8 +184,14 @@ orders, once we know how often a person actually has to do this.
 
 ### 20. The product's name
 
-Suggested on 17 September 2026, in order of preference: Crossline, then
-Airswitch, Swapline, Crossair. Checked against the web only: Crossline
+The founder asked for a coinage made of airtime, data and transfer or
+exchange. Suggested on 17 September 2026, in order of preference:
+**Airdax** (AIR-time, DA-ta, eXchange; said AIR-dax), then Airdex,
+Airdatex, Adex. Checked against the web only: Airdax turns up nothing;
+Airdex is two industrial companies abroad, pallets and heating, nothing in
+payments or telecoms; Airdatex turns up nothing; Adex is a common
+abbreviation used by many. Earlier plain-word suggestions, for the record:
+Crossline, Airswitch, Swapline, Crossair. Checked against the web only: Crossline
 turns up one household textiles trademark abroad and nothing in payments
 or telecoms; Anyline is an existing software company and Lineswap is
 already three products, so both are out. Domain registries are blocked
