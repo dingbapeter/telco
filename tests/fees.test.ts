@@ -34,11 +34,11 @@ test("a network on a quarter share gets a quarter of the fee, rounded down", () 
   const fee = computeFee(naira(500), { ...rule, networkShareBasisPoints: 2_500 });
   assert.equal(fee.networkShareKobo, naira(5));
   assert.equal(fee.platformShareKobo, naira(15));
-  // 2001 kobo fee at 25 percent is 500.25 kobo; the network gets 500.
-  const odd = computeFee(50_025, { ...rule, networkShareBasisPoints: 2_500, floorKobo: 2_001 });
-  assert.equal(odd.feeKobo, 2_001);
+  // 2002 kobo fee at 25 percent is 500.5 kobo; the network gets 500, not 501.
+  const odd = computeFee(50_025, { ...rule, networkShareBasisPoints: 2_500, floorKobo: 2_002 });
+  assert.equal(odd.feeKobo, 2_002);
   assert.equal(odd.networkShareKobo, 500);
-  assert.equal(odd.platformShareKobo, 1_501);
+  assert.equal(odd.platformShareKobo, 1_502);
 });
 
 test("the shares always add up to the fee and the fee plus payout to the amount", () => {

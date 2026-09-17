@@ -6,6 +6,89 @@ to go red, and the breakage is put back. This file records what each check
 caught. When a mutation does not turn a check red, the finding is written here
 before anything is changed.
 
+## How to run everything
+
+```
+npm run check
+```
+
+That runs the prose check, the typecheck and the test suite. The suite needs
+Postgres. Without `DATABASE_URL` it uses the local cluster and a database named
+`telco_test`, which it drops and rebuilds from the migrations on every run,
+applying them twice to prove they are safe to repeat. It refuses to reset any
+database whose name does not end in `_test`.
+
+The mutation check is a script in the repository and runs in CI on every push:
+
+```
+node scripts/mutation-check.ts
+```
+
+It applies each breakage listed in the script, runs the suite that should
+catch it, restores the file, and fails if any breakage left the suite green.
+
+## Core suites (money, fees, settings, ledger, transfers, migrations)
+
+Checked on 17 September 2026. Thirty breakages, all caught after two test
+gaps were closed. The full list is in `scripts/mutation-check.ts`; the ones
+that matter most for money:
+
+| Breakage introduced | Result |
+| --- | --- |
+| The fee floor or ceiling no longer applied | Red |
+| The fee allowed to swallow the whole amount | Red |
+| The network's share rounded to nearest instead of down | Red, after the gap below was closed |
+| A setting written without checking its range | Red |
+| An invalid stored setting used instead of the fallback | Red |
+| The application's journal balance check removed | Red, on the application's own message |
+| The database's journal balance trigger disabled | Red, on the test that bypasses the application |
+| A journal posted twice under the same key booked twice | Red |
+| Ledger postings made editable | Red |
+| The audit hook dropped from the settings table | Red |
+| The audit log ignoring who made the change | Red |
+| A state change no longer conditional on the current state | Red, on the two-workers and paid-twice tests |
+| The same notification processed a second time | Red |
+| The pool balance, approval threshold or daily ceiling no longer checked | Red, one test each |
+| The sender's daily limit ignored, or expired quotes counted against it | Red |
+| Late airtime in the grace period not matched, or the grace period never ending | Red |
+| The fee not recomputed on the amount that actually arrived | Red |
+| The network's share never booked | Red |
+| A refund booked against the wrong pool | Red |
+| A transfer held below the minimum allowed to be released | Red |
+| A receiving number at its daily cap still chosen | Red |
+| The network's own daily transfer cap ignored | Red |
+| The migration runner recording nothing | Red, after the gap below was closed |
+| Numbers with a country code rejected | Red |
+
+### Mutations that did not turn a suite red, and what was found
+
+- **Network share rounding.** The test used a fee of 2001 kobo at a quarter
+  share, which is 500.25 kobo. Rounding to nearest and rounding down both
+  give 500, so the test could not tell them apart. Not a second defence: a
+  gap. The test now uses 2002 kobo, which is 500.5, where the two rules
+  differ. Rounding down is the rule because we never accrue a kobo to a
+  network that we do not owe.
+- **Migration runner recording nothing.** The rerun test deletes the record
+  of applied migrations before running them again, so it could not see
+  whether the runner writes the record at all. Not a second defence: a gap.
+  A test now checks that every migration is recorded after a run and that a
+  second run applies nothing.
+
+### Two defences on purpose
+
+The ledger's balance rule is checked twice: in `postJournal` so the caller
+gets a message that names the difference in kobo, and by a deferred trigger
+in the database so nothing that writes postings directly can post an
+unbalanced journal. Each has its own test and its own mutation. Removing
+either one alone turns exactly one test red, which is how it should be. Do
+not "simplify" by removing one.
+
+The same is true of notification deduplication: the application checks the
+hash and reports a duplicate, and the database has a unique index on the
+hash. The mutation that makes the application process a duplicate is caught
+by the pool balance staying the same, not by an error, because the unique
+index still stops the second row.
+
 ## Prose check (`scripts/check-prose.sh`)
 
 Checked on 17 September 2026 against a staged README.md.

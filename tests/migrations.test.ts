@@ -19,6 +19,17 @@ test("running every migration a second time changes nothing and raises nothing",
   }
 });
 
+test("a migration that has already been applied is not run again", async () => {
+  const client = await pool.connect();
+  try {
+    const recorded = await client.query("SELECT count(*)::int AS n FROM schema_migrations");
+    assert.equal(recorded.rows[0].n, (await listMigrations()).length);
+    assert.deepEqual(await migrate(client), []);
+  } finally {
+    client.release();
+  }
+});
+
 test("migration names sort in the order they were written", async () => {
   const names = await listMigrations();
   assert.deepEqual(names, [...names].sort());
