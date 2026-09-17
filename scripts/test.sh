@@ -8,6 +8,11 @@ cd "$(git rev-parse --show-toplevel)"
 
 if [ -z "${DATABASE_URL:-}" ]; then
   export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/telco_test"
+  # On a developer machine with the Ubuntu Postgres packages, start the
+  # local cluster if it is not running, so the suite can always be run.
+  if command -v pg_lsclusters >/dev/null && pg_lsclusters 2>/dev/null | grep -q "main.*down"; then
+    pg_ctlcluster 16 main start
+  fi
 fi
 
 if [ "${TEST_KEEP_DATABASE:-}" != "1" ]; then

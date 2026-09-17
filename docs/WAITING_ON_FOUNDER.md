@@ -135,6 +135,24 @@ never ask for the login. **Recommendation:** one small Linux server from a
 provider with a Lagos or European region, Postgres on the same machine,
 the service under systemd, and Caddy in front for the certificate.
 
+### 15. A USSD short code of our own
+
+Today a sender needs a little data to open our page, and dials their own
+network's USSD code to move the airtime. A short code of our own (a sender
+dials, say, *347*88# and follows a menu) would let people with no data
+start a transfer, but it needs a USSD aggregator and, through them, each
+network's agreement, with a monthly cost. **Recommendation:** launch with
+the web page, watch how many senders drop off before dialling, and decide
+on a short code from that number.
+
+### 16. Text message confirmations
+
+The bridge phones could text the sender on each network's own SIM when the
+airtime is delivered, at the network's ordinary SMS rate on that SIM. The
+app would need the permission to send messages. **Recommendation:** yes,
+after the first real transfers, once the pattern of what senders ask is
+known.
+
 ## Decided
 
 - **17 September 2026. Country and networks.** Nigeria, naira, MTN,

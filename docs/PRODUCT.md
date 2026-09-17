@@ -112,6 +112,28 @@ the same core.
   added services. Whether and when to engage is the founder's decision. The
   switch layer is the thing a licence application would describe.
 
+## Channels: USSD and a little data
+
+The founder's rule: people will move the airtime by USSD, and reach us over
+mobile data that may be slow, expensive or both. So:
+
+- The sender's pages are a few kilobytes each, one cached stylesheet, no
+  fonts, no images, and nothing that needs a script. A script fills in the
+  network from the number as a convenience and the page works without it.
+- The instruction page shows one thing large: the exact USSD code to dial,
+  with the amount and our number filled in. Where the network's code has no
+  PIN in it, one tap opens the dial pad with the code. Where it does, the
+  page says where the PIN goes and that we never ask for it.
+- The status page updates itself with a plain page refresh, which works in
+  every browser and costs a few kilobytes a time.
+- Numbers on the status page are masked, because the link may be shared.
+
+Two channels are designed for and not yet built: a USSD short code of our
+own, so a sender with no data at all can start a transfer from the dial
+pad, which needs an aggregator and a network agreement; and text message
+confirmations to the sender, which the bridge phones can send on each
+network's own SIM once the app is allowed to send.
+
 ## Who uses it
 
 - **The sender** has airtime on network A and wants airtime on network B, for

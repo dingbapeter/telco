@@ -125,6 +125,23 @@ app" job) and the installable file is published as a build artifact. There
 is no automated test on the phone; docs/BRIDGE.md describes the check a
 person does with a real transfer.
 
+## Sender's pages suite (`tests/public.test.ts`)
+
+Drives the public pages the way a phone browser would. Checked on 17
+September 2026, all six breakages caught first time.
+
+| Breakage introduced | Result |
+| --- | --- |
+| Sender's numbers shown in full on the status page | Red |
+| A flood of quotes no longer slowed | Red |
+| A form filled by a bot accepted | Red |
+| An expired quote still telling the sender to send | Red |
+| The dial code showing a placeholder instead of the amount | Red |
+| The network suggestion from the prefix broken | Red |
+
+The suite also holds each page under a size limit, so a change that makes
+the pages heavy for a weak connection fails the build.
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

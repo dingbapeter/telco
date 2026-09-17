@@ -50,6 +50,12 @@ const MUTATIONS: Mutation[] = [
   { name: "unreadable airtime message dropped silently", file: "src/bridge.ts", find: "return finish(looksLikeAirtime ? \"unparsed\" : \"ignored\", null, parsed.problem);", replace: "return finish(\"ignored\", null, parsed.problem);", suite: "tests/bridge.test.ts" },
   { name: "phone heartbeat not recorded", file: "src/web/bridge.ts", find: "await withActor(`bridge:${device.label}`, (c) => heartbeat(c, device.id, status), db);", replace: "", suite: "tests/bridge.test.ts" },
   { name: "phone token stored in clear", file: "src/bridge.ts", find: "[label.trim(), code, hashToken(token)],", replace: "[label.trim(), code, token],", suite: "tests/bridge.test.ts" },
+  { name: "sender numbers shown in full on the status page", file: "src/public/pages.ts", find: "return `${number.slice(0, 4)} *** ${number.slice(-4)}`;", replace: "return number;", suite: "tests/public.test.ts" },
+  { name: "quote flood not slowed", file: "src/public/pages.ts", find: "if (tooManyQuotes(`n:${sender}`) || tooManyQuotes(`ip:${req.ip}`)) {", replace: "if (false) {", suite: "tests/public.test.ts" },
+  { name: "bot form accepted", file: "src/public/pages.ts", find: "if ((req.form.get(\"website\") ?? \"\") !== \"\") return homePage", replace: "if (false) return homePage", suite: "tests/public.test.ts" },
+  { name: "expired quote still tells the sender to send", file: "src/public/pages.ts", find: "${t.state === \"expired\" || expired", replace: "${false", suite: "tests/public.test.ts" },
+  { name: "dial code shows the placeholder instead of the amount", file: "src/public/pages.ts", find: "const dial = code ? code.replace(\"{amount}\", amountNaira).replace(\"{number}\", t.receiving_number) : \"\";", replace: "const dial = code ? code.replace(\"{number}\", t.receiving_number) : \"\";", suite: "tests/public.test.ts" },
+  { name: "network suggestion from the prefix broken", file: "src/public/pages.ts", find: "WHERE prefix = $1\", [prefixOf(local)]", replace: "WHERE prefix = $1\", [local]", suite: "tests/public.test.ts" },
   { name: "phone numbers with a country code rejected", file: "src/phone.ts", find: "if (digits.length === 13 && digits.startsWith(\"234\")) local = \"0\" + digits.slice(3);", replace: "if (false) local = digits;", suite: "tests/phone.test.ts" },
 ];
 
