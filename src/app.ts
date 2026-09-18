@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { registerAgentsAdmin } from "./admin/agents.ts";
 import { registerAudit } from "./admin/audit.ts";
 import { registerBridgeAdmin } from "./admin/bridge.ts";
 import { registerBundles } from "./admin/bundles.ts";
@@ -12,6 +13,7 @@ import { registerSettlement } from "./admin/settlement.ts";
 import { registerPools } from "./admin/pools.ts";
 import { registerSettings } from "./admin/settings.ts";
 import { registerTransfers } from "./admin/transfers.ts";
+import { registerAgentPortal } from "./agent/portal.ts";
 import { paystackFromEnv, type PaystackProvider } from "./payments/paystack.ts";
 import { registerBuy } from "./public/buy.ts";
 import { registerPublic } from "./public/pages.ts";
@@ -40,6 +42,10 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicB
   registerOrders(app);
   registerSettlement(app);
   registerPublic(app);
-  registerBuy(app, { paystack: options.paystack ?? paystackFromEnv(), publicBaseUrl: options.publicBaseUrl ?? "http://localhost:3000" });
+  const paystack = options.paystack ?? paystackFromEnv();
+  const publicBaseUrl = options.publicBaseUrl ?? "http://localhost:3000";
+  registerBuy(app, { paystack, publicBaseUrl });
+  registerAgentsAdmin(app);
+  registerAgentPortal(app, { paystack, publicBaseUrl, secureCookies: options.secureCookies });
   return app;
 }

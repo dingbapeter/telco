@@ -247,6 +247,24 @@ reported a week ahead. Checked on 18 September 2026.
 | Gifted data landing without a lot | Red |
 | A lot's expiry ignoring the bundle's validity | Red |
 
+## Agents suite (`tests/agents.test.ts`)
+
+Drives the referral link, the commission, the wallet by bank transfer and
+by Paystack, buying from the wallet, refunds back to it, withdrawals, and
+the portal and command centre pages. Checked on 18 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| A commission paid twice | Red |
+| The commission not paid on completion | Red |
+| A wallet purchase allowed beyond the balance | Red |
+| A withdrawal allowed beyond the balance | Red |
+| An agent's link accepted while agents are off | Red |
+| The agent's discount not applied | Red |
+| A wallet refund sent to the bank instead of the wallet | Red |
+| An online top-up credited twice | Red |
+| A paused agent able to log in | Red |
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

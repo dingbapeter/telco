@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { agentByCode } from "../agents.ts";
 import { describeBundle, getBundle, listBundles, type Bundle } from "../bundles.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
@@ -8,6 +9,7 @@ import { getSettingValue, NETWORK_CODES, type NetworkCode } from "../settings.ts
 import { getTransferByReference, quoteTransfer, type Transfer } from "../transfers.ts";
 import { html, notice, type Html } from "../web/html.ts";
 import type { App, Request, Response } from "../web/http.ts";
+import { cookie } from "../web/http.ts";
 
 const NAMES: Record<NetworkCode, string> = { MTN: "MTN", AIRTEL: "Airtel", GLO: "Glo", "9MOBILE": "9mobile" };
 
@@ -215,8 +217,31 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
   return { kind: "html", body: shell(pending ? "Send the airtime" : "Transfer status", body, refresh ? { refreshSeconds: refresh } : {}) };
 }
 
+export const AGENT_COOKIE = "telco_agent";
+
+// The agent whose link brought this visitor, if the cookie still names an
+// active agent and agents are switched on.
+export async function referringAgent(req: Request, db: pg.Pool): Promise<number | undefined> {
+  const code = req.cookies[AGENT_COOKIE];
+  if (!code) return undefined;
+  if (!(await getSettingValue(db, "agent.enabled"))) return undefined;
+  return (await agentByCode(db, code))?.id;
+}
+
 export function registerPublic(app: App): void {
   app.get("/", async (_req, db) => homePage(db), false);
+
+  // An agent's link: remembers the agent for thirty days, then shows the
+  // ordinary front page.
+  app.get(
+    "/a/:code",
+    async (req, db) => {
+      const agent = (await getSettingValue(db, "agent.enabled")) ? await agentByCode(db, req.query.get("code") ?? "") : undefined;
+      if (!agent) return { kind: "redirect", to: "/" };
+      return { kind: "redirect", to: "/", headers: { "set-cookie": cookie(AGENT_COOKIE, agent.code, req.raw.headers["x-forwarded-proto"] === "https", 30 * 86_400) } };
+    },
+    false,
+  );
 
   app.post(
     "/quote",
@@ -245,6 +270,7 @@ export function registerPublic(app: App): void {
         return homePage(db, values, notice("problem", "You have asked for several transfers in the last few minutes. Send the airtime for one of them, or wait ten minutes and try again."), 429);
       }
       try {
+        const agentId = await referringAgent(req, db);
         const { transfer } = await withActor(`sender:${sender}`, (c) =>
           quoteTransfer(c, `sender:${sender}`, {
             fromNetwork: values.from ?? "",
@@ -254,6 +280,7 @@ export function registerPublic(app: App): void {
             amountKobo,
             inBundleId,
             outBundleId,
+            agentId,
           }),
           db,
         );

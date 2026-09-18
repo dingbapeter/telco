@@ -2,6 +2,7 @@ import { createHash, randomInt } from "node:crypto";
 import type pg from "pg";
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
+import { bookCommission } from "./agents.ts";
 import { activeBundle, describeBundle, getBundle, type Bundle } from "./bundles.ts";
 import { consumeLots, openLot } from "./datalots.ts";
 import { computeFee, loadFeeRule, requiredAmountFor, type FeeBreakdown, type FeeRule } from "./fees.ts";
@@ -59,6 +60,8 @@ export type Transfer = {
   out_bundle_id: number | null;
   refund_rail: string | null;
   refund_request_id: string | null;
+  agent_id: number | null;
+  agent_commission_kobo: number | null;
 };
 
 // Where value received lands: airtime in the network's pool, gifted data in
@@ -143,6 +146,8 @@ export type QuoteInput = {
   amountKobo?: number | undefined;
   inBundleId?: number | undefined;
   outBundleId?: number | undefined;
+  // The agent who brought this sender, if any.
+  agentId?: number | undefined;
 };
 
 // Works out, for a transfer whose payout must be exactly a bundle's price,
@@ -248,9 +253,9 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
 
   const { rows } = await db.query<Transfer>(
     `INSERT INTO transfers (reference, state, from_network, to_network, sender_number, recipient_number, receiving_number,
-       requested_kobo, quoted_fee_kobo, quoted_payout_kobo, expires_at, in_kind, in_bundle_id, out_kind, out_bundle_id)
-     VALUES ($1, 'awaiting_inbound', $2, $3, $4, $5, $6, $7, $8, $9, now() + make_interval(mins => $10), $11, $12, $13, $14) RETURNING *`,
-    [newReference(), from, to, sender, recipient, receivingNumber, amount, fee.feeKobo, fee.payoutKobo, windowMinutes, inBundle ? "data" : "airtime", inBundle?.id ?? null, outBundle ? "data" : "airtime", outBundle?.id ?? null],
+       requested_kobo, quoted_fee_kobo, quoted_payout_kobo, expires_at, in_kind, in_bundle_id, out_kind, out_bundle_id, agent_id)
+     VALUES ($1, 'awaiting_inbound', $2, $3, $4, $5, $6, $7, $8, $9, now() + make_interval(mins => $10), $11, $12, $13, $14, $15) RETURNING *`,
+    [newReference(), from, to, sender, recipient, receivingNumber, amount, fee.feeKobo, fee.payoutKobo, windowMinutes, inBundle ? "data" : "airtime", inBundle?.id ?? null, outBundle ? "data" : "airtime", outBundle?.id ?? null, input.agentId ?? null],
   );
   const transfer = rows[0]!;
   await recordEvent(db, transfer.id, null, "awaiting_inbound", actor, { requested_kobo: amount, quoted_fee_kobo: fee.feeKobo, in_bundle: inBundle?.code ?? null, out_bundle: outBundle?.code ?? null });
@@ -516,6 +521,8 @@ export async function completePayout(db: Client, actor: string, transferId: numb
     reference: moved.reference,
     postings,
   });
+  // The agent who brought the sender earns their share of our part of the fee.
+  if (moved.agent_id) await bookCommission(db, moved.agent_id, moved.id, moved.reference, moved.platform_share_kobo!);
   await recordEvent(db, moved.id, "paying_out", "completed", actor, { payout_reference: payoutReference });
   return moved;
 }

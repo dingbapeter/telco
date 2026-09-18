@@ -8,7 +8,8 @@ import type { PaystackProvider } from "../payments/paystack.ts";
 import { getSettingValues, NETWORK_CODES, type NetworkCode } from "../settings.ts";
 import { html, notice, type Html } from "../web/html.ts";
 import type { App, Response } from "../web/http.ts";
-import { mask, shell, tooManyQuotes } from "./pages.ts";
+import { mask, referringAgent, shell, tooManyQuotes } from "./pages.ts";
+import { topUpWallet } from "../agents.ts";
 
 const NAMES: Record<NetworkCode, string> = { MTN: "MTN", AIRTEL: "Airtel", GLO: "Glo", "9MOBILE": "9mobile" };
 
@@ -115,7 +116,8 @@ export function registerBuy(app: App, options: PaymentOptions): void {
       if (!bundleId && face === undefined) return buyPage(db, values, notice("problem", "Enter the amount in naira, like 500, or pick a bundle."), 400);
       if (tooManyQuotes(`buy:${req.ip}`)) return buyPage(db, values, notice("problem", "You have started several orders in the last few minutes. Pay for one of them, or wait ten minutes."), 429);
       try {
-        const order = await withActor("buyer", (c) => createOrder(c, "buyer", { network: values.network ?? "", recipientNumber: values.number ?? "", faceKobo: face, bundleId, email: values.email }), db);
+        const agentId = await referringAgent(req, db);
+        const order = await withActor("buyer", (c) => createOrder(c, "buyer", { network: values.network ?? "", recipientNumber: values.number ?? "", faceKobo: face, bundleId, email: values.email, agentId }), db);
         return { kind: "redirect", to: `/o/${order.reference}` };
       } catch (err) {
         if (err instanceof UserFacingError) return buyPage(db, values, notice("problem", err.message), 400);
@@ -165,6 +167,13 @@ export function registerBuy(app: App, options: PaymentOptions): void {
     "/payments/paystack/callback",
     async (req, db) => {
       const reference = req.query.get("reference") ?? req.query.get("trxref") ?? "";
+      if (reference.toUpperCase().startsWith("AT-")) {
+        if (options.paystack) {
+          const v = await options.paystack.verify(reference.toUpperCase());
+          if (v.status === "success") await settleAgentTopUp(db, reference.toUpperCase(), v.amountKobo, v.feesKobo, options.paystack.cashAccount);
+        }
+        return { kind: "redirect", to: "/agent/topup" };
+      }
       const o = await getOrderByReference(db, reference);
       if (!o) return { kind: "redirect", to: "/buy" };
       if (options.paystack && o.state === "awaiting_payment") {
@@ -201,7 +210,9 @@ export function registerBuy(app: App, options: PaymentOptions): void {
       );
       if (!inserted.rows[0]) return { kind: "json", body: { ok: true, outcome: "already seen" } };
       let outcome = "ignored";
-      if (type === "charge.success" && reference) {
+      if (type === "charge.success" && reference.toUpperCase().startsWith("AT-")) {
+        outcome = (await settleAgentTopUp(db, reference.toUpperCase(), Number(event.data?.amount ?? 0), Number(event.data?.fees ?? 0), options.paystack.cashAccount)) ? "paid" : "already";
+      } else if (type === "charge.success" && reference) {
         const o = await getOrderByReference(db, reference);
         if (o) {
           const r = await withActor("paystack:webhook", (c) => recordPayment(c, "paystack:webhook", o.id, { method: "paystack", reference, paidKobo: Number(event.data?.amount ?? 0), feeKobo: Number(event.data?.fees ?? 0), cashAccount: options.paystack!.cashAccount }), db);
@@ -213,6 +224,17 @@ export function registerBuy(app: App, options: PaymentOptions): void {
     },
     false,
   );
+}
+
+// An agent's online wallet top-up has settled. Claims the top-up row once
+// and credits the wallet with what was actually paid.
+export async function settleAgentTopUp(db: pg.Pool, reference: string, paidKobo: number, feeKobo: number, cashAccount: string): Promise<boolean> {
+  return withActor("paystack", async (c) => {
+    const row = (await c.query<{ agent_id: number }>("UPDATE agent_topups SET state = 'paid', paid_at = now() WHERE reference = $1 AND state = 'started' RETURNING agent_id", [reference])).rows[0];
+    if (!row) return false;
+    await topUpWallet(c, row.agent_id, { reference, paidKobo, feeKobo, cashAccount, method: "paystack" });
+    return true;
+  }, db);
 }
 
 export { priceFor };

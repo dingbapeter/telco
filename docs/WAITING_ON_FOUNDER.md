@@ -65,9 +65,9 @@ ledger as the source of truth for every balance.
 
 ### 5. Who uses it
 
-Consumers only, or also agents and resellers who hold a float and earn a
-commission. **Default:** both, because in most airtime markets agents bring
-the volume. Agent features come after the consumer loop works end to end.
+Consumers and agents, both built. Three settings are yours under Settings,
+Agents: whether agents are on, their share of our fee, and their purchase
+discount. Defaults: off, 20 percent of our part of the fee, 2 percent off.
 
 ### 6. Channels
 

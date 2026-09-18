@@ -181,8 +181,9 @@ network's own SIM once the app is allowed to send.
   their own number or someone else's. At launch no account is needed: a
   transfer has a reference and a status page.
 - **The recipient** receives airtime. They need nothing.
-- **An agent** (later) holds a float and earns a commission on the transfers
-  they bring in.
+- **An agent** holds a prepaid wallet, buys for customers from it at a
+  discount, and earns a share of our fee on the transfers their link brings
+  in. See docs/AGENTS.md.
 - **The founder** runs everything from the command centre.
 
 ## The order of building
@@ -203,4 +204,4 @@ network's own SIM once the app is allowed to send.
 7. The sending phone: the bridge app dialling the network's own codes to
    send airtime and gift bundles from our SIMs, so payouts from a pool,
    refunds and pool draining happen without a person.
-8. Agents.
+8. Agents. Built.

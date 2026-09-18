@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import type pg from "pg";
 import type { Queryable } from "./db.ts";
+import { agentPrice, chargeWallet } from "./agents.ts";
 import { activeBundle, type Bundle } from "./bundles.ts";
 import { consumeLots } from "./datalots.ts";
 import { UserFacingError } from "./errors.ts";
@@ -41,6 +42,7 @@ export type Order = {
   created_at: Date;
   expires_at: Date;
   bundle_id: number | null;
+  agent_id: number | null;
 };
 
 type Client = pg.PoolClient;
@@ -84,7 +86,18 @@ export function priceFor(faceKobo: number, discountBasisPoints: number): Quote {
 
 // A buyer asks for airtime on a network. The price is the face value less
 // any discount set for that network to drain its pool.
-export async function createOrder(db: Client, actor: string, input: { network: string; recipientNumber: string; faceKobo?: number | undefined; bundleId?: number | undefined; email?: string | undefined }): Promise<Order> {
+export type OrderInput = {
+  network: string;
+  recipientNumber: string;
+  faceKobo?: number | undefined;
+  bundleId?: number | undefined;
+  email?: string | undefined;
+  // The agent who brought the buyer, or who is buying from their wallet.
+  agentId?: number | undefined;
+  fromWallet?: boolean | undefined;
+};
+
+export async function createOrder(db: Client, actor: string, input: OrderInput): Promise<Order> {
   const network = input.network.toUpperCase();
   if (!(NETWORK_CODES as readonly string[]).includes(network)) throw new UserFacingError("unknown_network", "Choose the network of the number you are buying for.");
   const recipient = normaliseNigerianNumber(input.recipientNumber);
@@ -97,16 +110,25 @@ export async function createOrder(db: Client, actor: string, input: { network: s
   if (face > max) throw new UserFacingError("above_maximum", `The largest purchase is ${formatNaira(max)}.`);
   if (face % 100 !== 0 && !bundle) throw new UserFacingError("whole_naira", "Buy a whole number of naira, like 500.");
   // A bundle is sold at its catalogue price; the discount is for airtime.
-  const q = bundle ? { faceKobo: face, discountKobo: 0, priceKobo: face } : priceFor(face, discounts[network as NetworkCode]);
+  // An agent buying from their wallet gets the agent's discount instead.
+  const q = input.fromWallet && input.agentId
+    ? { faceKobo: face, ...(await agentPrice(db, face)) }
+    : bundle ? { faceKobo: face, discountKobo: 0, priceKobo: face } : priceFor(face, discounts[network as NetworkCode]);
   const email = input.email?.trim() || null;
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new UserFacingError("bad_email", "That does not look like an email address. Leave it empty if you prefer.");
   const { rows } = await db.query<Order>(
-    `INSERT INTO orders (reference, state, network_code, recipient_number, buyer_email, face_kobo, discount_kobo, price_kobo, expires_at, bundle_id)
-     VALUES ($1, 'awaiting_payment', $2, $3, $4, $5, $6, $7, now() + make_interval(mins => $8), $9) RETURNING *`,
-    [newOrderReference(), network, recipient, email, q.faceKobo, q.discountKobo, q.priceKobo, windowMinutes, bundle?.id ?? null],
+    `INSERT INTO orders (reference, state, network_code, recipient_number, buyer_email, face_kobo, discount_kobo, price_kobo, expires_at, bundle_id, agent_id)
+     VALUES ($1, 'awaiting_payment', $2, $3, $4, $5, $6, $7, now() + make_interval(mins => $8), $9, $10) RETURNING *`,
+    [newOrderReference(), network, recipient, email, q.faceKobo, q.discountKobo, q.priceKobo, windowMinutes, bundle?.id ?? null, input.agentId ?? null],
   );
-  const order = rows[0]!;
-  await recordEvent(db, order.id, null, "awaiting_payment", actor, { face_kobo: face, price_kobo: q.priceKobo });
+  let order = rows[0]!;
+  await recordEvent(db, order.id, null, "awaiting_payment", actor, { face_kobo: face, price_kobo: q.priceKobo, agent_id: input.agentId ?? null });
+  if (input.fromWallet && input.agentId) {
+    // Paid at once from the wallet; delivery follows like any paid order.
+    await chargeWallet(db, input.agentId, q.priceKobo, order.reference);
+    order = (await claim(db, order.id, "awaiting_payment", "paid", { payment_method: "wallet", payment_reference: `wallet:${input.agentId}`, paid_kobo: q.priceKobo, payment_fee_kobo: 0, paid_at: new Date() }))!;
+    await recordEvent(db, order.id, "awaiting_payment", "paid", actor, { method: "wallet", paid_kobo: q.priceKobo });
+  }
   return order;
 }
 
@@ -207,6 +229,8 @@ export async function refundOrder(db: Client, actor: string, orderId: number, re
   const o = (await db.query<Order>("SELECT * FROM orders WHERE id = $1 FOR UPDATE", [orderId])).rows[0];
   if (!o) throw new UserFacingError("no_such_order", "There is no order with that id.");
   if (o.paid_kobo === null) throw new UserFacingError("not_paid", "Nothing was paid on this order, so there is nothing to refund.");
+  // Money that came from an agent's wallet goes back to that wallet.
+  if (o.payment_method === "wallet" && o.agent_id) cashAccount = `agent:${o.agent_id}`;
   const moved = await claim(db, o.id, ["paid", "delivery_failed", "held"], "refunded", { refunded_kobo: o.paid_kobo, refund_reference: reference, refunded_at: new Date() });
   if (!moved) throw new UserFacingError("cannot_refund", `An order that is ${o.state.replaceAll("_", " ")} cannot be refunded.`);
   await postJournal(db, {

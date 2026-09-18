@@ -52,6 +52,7 @@ const NAV: { href: string; label: string }[] = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/transfers", label: "Transfers" },
   { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/agents", label: "Agents" },
   { href: "/admin/inbound", label: "Airtime in" },
   { href: "/admin/pools", label: "Pools" },
   { href: "/admin/numbers", label: "Receiving numbers" },

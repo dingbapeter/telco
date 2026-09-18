@@ -191,6 +191,13 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
       checks.push({ status: "warn", title: "Paystack balance and our ledger disagree", detail: `Paystack reports ${formatNaira(h.balanceKobo)}; our ledger has ${formatNaira(ledgerCash)}.`, fix: "Paystack settles to the bank on its own schedule. Under Pools, record each settlement as money lost from Paystack and added to the bank." });
     }
   }
+  const [agentsOn] = await getSettingValues(db, ["agent.enabled"] as const);
+  const agentCount = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM agents WHERE active")).rows[0]!.n;
+  const waitingWithdrawals = (await db.query<{ n: number; total: number }>("SELECT count(*)::int AS n, coalesce(sum(amount_kobo), 0)::bigint AS total FROM agent_withdrawals WHERE state = 'requested'")).rows[0]!;
+  if (agentsOn) {
+    checks.push(agentCount > 0 ? { status: "ok", title: `${agentCount} active agent(s)`, detail: "Agents can log in, bring senders and buy from their wallets." } : { status: "warn", title: "Agents are on but there are none", detail: "Nobody has an agent account yet.", fix: "Command centre, Agents: add an agent and give them their first password." });
+    checks.push(waitingWithdrawals.n === 0 ? { status: "ok", title: "No agent is waiting to be paid", detail: "Every withdrawal request has been settled." } : { status: "bad", title: `${waitingWithdrawals.n} withdrawal(s) waiting, ${formatNaira(waitingWithdrawals.total)}`, detail: "Agents are waiting for their money.", fix: "Command centre, Agents: pay each by bank transfer and record the reference." });
+  }
   const stuckOrders = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM orders WHERE state IN ('held', 'delivery_failed') OR (state = 'delivering' AND created_at < now() - interval '1 hour')")).rows[0]!.n;
   checks.push(stuckOrders === 0 ? { status: "ok", title: "No order is waiting on a person", detail: "Nothing is held, failed or stuck delivering." } : { status: "bad", title: `${stuckOrders} order(s) waiting on a person`, detail: "Buyers have paid and are waiting.", fix: "Command centre, Orders, Needs a person." });
 

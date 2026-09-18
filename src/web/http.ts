@@ -203,3 +203,7 @@ export function send(res: ServerResponse, r: Response): void {
 export function sessionCookie(token: string, secure: boolean, maxAgeSeconds: number): string {
   return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
 }
+
+export function cookie(name: string, value: string, secure: boolean, maxAgeSeconds: number): string {
+  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
+}
