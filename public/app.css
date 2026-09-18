@@ -63,3 +63,4 @@ dd { margin: 0; }
 .pager { margin: 0.75rem 0; display: flex; gap: 1rem; }
 code { background: var(--wash); padding: 0.05rem 0.3rem; overflow-wrap: anywhere; }
 @media (min-width: 40rem) { .top { display: flex; gap: 1.5rem; align-items: baseline; } .brand { margin: 0; } }
+tr.soon td { background: var(--bad-wash); }

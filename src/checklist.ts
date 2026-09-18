@@ -5,6 +5,7 @@ import { formatNaira } from "./money.ts";
 import { listMigrations } from "./migrate.ts";
 import { getSetting, getSettingValue, getSettingValues, NETWORK_CODES, SETTINGS } from "./settings.ts";
 import { STALE_AFTER_MINUTES } from "./admin/bridge.ts";
+import { expiringSoon } from "./datalots.ts";
 import { paystackFromEnv } from "./payments/paystack.ts";
 import { railFromEnv } from "./rails/rail.ts";
 
@@ -83,6 +84,12 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
         : { status: needed ? "bad" : "warn", title: `${c} phone cannot send`, detail: !sender ? "No phone." : !sender.can_send ? `${sender.label} has not been allowed to make calls.` : !sender.pin_set ? `${sender.label} has no transfer PIN entered.` : `${sender.label} has not reported recently.`, fix: `On the phone: tap "Allow sending" and enter the SIM's transfer PIN. ${needed ? `${c} is routed to the phone, so payouts wait until this is fixed.` : "Until then refunds and pool deliveries on this network are done by hand."}` },
     );
   }
+  const expiring = await expiringSoon(db, 7);
+  checks.push(
+    expiring.length === 0
+      ? { status: "ok", title: "No gifted data expires this week", detail: "Every lot of data we hold has more than a week left, or there is none." }
+      : { status: "warn", title: `${formatNaira(expiring.reduce((s, e) => s + e.value, 0))} of gifted data expires within a week`, detail: expiring.map((e) => `${e.network_code}: ${formatNaira(e.value)} in ${e.lots} lot(s)`).join("; "), fix: "Command centre, Settings, Retail top-up: put a discount on that network's bundles, and route the network's bundle deliveries to the phone so the data goes out before it is lost." },
+  );
   const openCommands = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM phone_commands WHERE state = 'unknown'")).rows[0]!.n;
   checks.push(openCommands === 0 ? { status: "ok", title: "No phone command is waiting on a person", detail: "Every dial got a confirmation or a clear failure." } : { status: "bad", title: `${openCommands} phone command(s) got no confirmation`, detail: "Something was dialled and the network did not say what happened.", fix: "Command centre, Phone bridge: read the phone's messages and mark each one as gone through or not." });
   const unparsedMessages = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM bridge_messages WHERE outcome = 'unparsed'")).rows[0]!.n;

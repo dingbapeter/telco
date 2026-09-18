@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import type pg from "pg";
 import type { Queryable } from "./db.ts";
 import { activeBundle, type Bundle } from "./bundles.ts";
+import { consumeLots } from "./datalots.ts";
 import { UserFacingError } from "./errors.ts";
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { applyBasisPoints, assertKobo, formatNaira } from "./money.ts";
@@ -174,6 +175,7 @@ export async function completeDelivery(db: Client, actor: string, orderId: numbe
     if (via.commissionKobo > 0) postings.push({ account: "revenue:provider_commission", amountKobo: -via.commissionKobo });
   } else {
     postings.push({ account: moved.bundle_id ? `datapool:${moved.network_code}` : `pool:${moved.network_code}`, amountKobo: -moved.face_kobo });
+    if (moved.bundle_id) await consumeLots(db, moved.network_code, moved.face_kobo);
   }
   await postJournal(db, { idempotencyKey: `order:${moved.id}:delivery`, description: `Delivered ${formatNaira(moved.face_kobo)} on ${moved.network_code} for ${moved.reference}`, reference: moved.reference, postings });
   await recordEvent(db, moved.id, "delivering", "delivered", actor, { reference });

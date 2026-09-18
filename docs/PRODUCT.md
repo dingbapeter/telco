@@ -78,6 +78,13 @@ our MTN phone sends them MTN airtime. Cash in the bank and Paystack, less
 what went into the VTpass wallet and SIM float, is the business's money,
 and the Pools page shows every kobo of it.
 
+For data the same story holds with one twist. The sender gifts a bundle
+to our SIM with the network's own gifting code; the network texts our SIM;
+we value the gift at its catalogue price and pay out the other side. But
+data has only one exit, gifting it onward on the same network, and it
+expires. So every gift is a lot with an expiry, spent oldest first, and
+written off as a loss if it expires unused. See docs/DATA.md.
+
 What we are to a network is a subscriber whose SIM receives and sends more
 transfers than most, under a feature offered for personal use with daily
 caps. A SIM that receives thousands of transfers can be barred. That is

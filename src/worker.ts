@@ -2,6 +2,7 @@ import type pg from "pg";
 import { withActor } from "./db.ts";
 import type { PayoutRail, SendResult } from "./rails/rail.ts";
 import { newRequestId } from "./rails/vtpass.ts";
+import { writeOffExpired } from "./datalots.ts";
 import { expireCommands, PhoneRail } from "./sendingphone.ts";
 import { getSettingValues, type NetworkCode } from "./settings.ts";
 import { completeDelivery, failDelivery, startDelivery, type Order } from "./orders.ts";
@@ -42,6 +43,7 @@ export async function runPayoutCycle(db: pg.Pool, railOrRails: PayoutRail | Rail
     return report;
   }
   await expireCommands(db, timeout);
+  await withActor(ACTOR, (c) => writeOffExpired(c, now), db);
   const byName = (name: string): PayoutRail | undefined => (name === "phone" ? rails.phone : rails.provider?.name === name ? rails.provider : undefined);
 
   // First, anything we sent and never heard back about.

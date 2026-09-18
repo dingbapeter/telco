@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type pg from "pg";
+import { openLots } from "../datalots.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { balances, postJournal } from "../ledger.ts";
@@ -25,12 +26,20 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
     ),
   ]);
   const byCode = Object.fromEntries(all.map((a) => [a.code, a]));
+  const lots = await openLots(db);
+  const soon = Date.now() + 7 * 86_400_000;
   // A fresh key per form render makes a double submit book once.
   const key = randomBytes(8).toString("hex");
   const body = html`<h1>Pools</h1>
     ${message ?? ""}
     <p class="muted">A pool is the airtime we hold on a network, according to our own ledger. It should match the balance on that network's SIM. When it does not, record the difference below so the ledger stays true.</p>
     <div class="cards">${NETWORK_CODES.map((c) => html`<div class="card"><div class="label">${c} pool</div><div class="value">${money(byCode[`pool:${c}`]?.balanceKobo ?? 0)}</div></div>`)}</div>
+    <h2>Gifted data we hold</h2>
+    <p class="muted">Each bundle gifted to a SIM is a lot worth its catalogue value until it expires. Data goes out oldest first. What expires unused is written off as a loss the day it expires, with a line in the ledger.</p>
+    <div class="scroll"><table><tr><th>Network</th><th class="num">Size</th><th class="num">Value left</th><th>Received</th><th>Expires</th><th>From</th></tr>
+      ${lots.map((l) => html`<tr class="${l.expires_at && new Date(l.expires_at).getTime() < soon ? "soon" : ""}"><td>${l.network_code}</td><td class="num">${l.size_mb}MB</td><td class="num">${money(l.remaining_value_kobo)}</td><td>${when(l.received_at)}</td><td>${l.expires_at ? when(l.expires_at) : html`<span class="muted">unknown, set the bundle's validity</span>`}</td><td>${l.source}</td></tr>`)}
+      ${lots.length === 0 ? html`<tr><td colspan="6" class="muted">No gifted data held.</td></tr>` : ""}
+    </table></div>
     <h2>All accounts</h2>
     <table><tr><th>Account</th><th>Kind</th><th class="num">Balance</th></tr>
       ${all.map((a) => html`<tr><td>${a.name}<br><code>${a.code}</code></td><td>${a.kind}</td><td class="num">${money(a.balanceKobo)}</td></tr>`)}

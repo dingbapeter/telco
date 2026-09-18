@@ -2,7 +2,8 @@ import { createHash, randomInt } from "node:crypto";
 import type pg from "pg";
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
-import { activeBundle, describeBundle, type Bundle } from "./bundles.ts";
+import { activeBundle, describeBundle, getBundle, type Bundle } from "./bundles.ts";
+import { consumeLots, openLot } from "./datalots.ts";
 import { computeFee, loadFeeRule, requiredAmountFor, type FeeBreakdown, type FeeRule } from "./fees.ts";
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { assertKobo, formatNaira } from "./money.ts";
@@ -378,6 +379,10 @@ async function bookInbound(db: Client, actor: string, candidate: Transfer, amoun
       { account: "owed:senders", amountKobo: -amount },
     ],
   });
+  if (updated.in_kind === "data" && updated.in_bundle_id) {
+    const b = await getBundle(db, updated.in_bundle_id);
+    if (b) await openLot(db, { network: updated.from_network, bundleId: b.id, sizeMb: b.size_mb, valueKobo: amount, validityDays: b.validity_days, source: updated.reference });
+  }
   await db.query("UPDATE inbound_notifications SET matched_transfer_id = $1 WHERE id = $2", [updated.id, notificationId]);
   await recordEvent(db, updated.id, candidate.state, nextState, actor, {
     notification_id: notificationId,
@@ -502,6 +507,7 @@ export async function completePayout(db: Client, actor: string, transferId: numb
   } else {
     // From our own SIM: airtime from its pool, a gifted bundle from its data pool.
     postings.push({ account: moved.out_kind === "data" ? `datapool:${moved.to_network}` : `pool:${moved.to_network}`, amountKobo: -moved.payout_kobo! });
+    if (moved.out_kind === "data") await consumeLots(db, moved.to_network, moved.payout_kobo!);
   }
   if (moved.network_share_kobo! > 0) postings.push({ account: `owed:${moved.from_network}`, amountKobo: -moved.network_share_kobo! });
   await postJournal(db, {
@@ -553,6 +559,7 @@ export async function completeRefund(db: Client, actor: string, transferId: numb
       { account: inboundAccount(moved), amountKobo: -moved.received_kobo! },
     ],
   });
+  if (moved.in_kind === "data") await consumeLots(db, moved.from_network, moved.received_kobo!);
   await recordEvent(db, moved.id, "refunding", "refunded", actor, { refund_reference: refundReference });
   return moved;
 }

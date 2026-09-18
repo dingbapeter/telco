@@ -233,6 +233,20 @@ The app itself is compiled by CI. Dialling a real network code cannot be
 tested here; the check a person does with a small real transfer is in
 docs/BRIDGE.md.
 
+## Data lots suite (`tests/datalots.test.ts`)
+
+Gifted data as lots with expiry: opened on arrival, spent soonest-expiring
+first by deliveries and refunds, written off once when expired, and
+reported a week ahead. Checked on 18 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| Expired data never written off | Red |
+| Expired data written off twice | Red |
+| Data spent newest first instead of soonest expiring | Red |
+| Gifted data landing without a lot | Red |
+| A lot's expiry ignoring the bundle's validity | Red |
+
 ### Two defences on purpose
 
 The ledger's balance rule is checked twice: in `postJournal` so the caller

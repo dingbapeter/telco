@@ -32,6 +32,22 @@ it be sent to us.
 - **Buy a bundle.** On the Buy airtime page, a bundle can be chosen instead
   of an amount, at its catalogue price, paid for like any order.
 
+## Why data is harder than airtime, and what is done about it
+
+Airtime in a pool waits; data in a pool rots. A gifted bundle can only
+leave our SIM by being gifted onward to a number on the same network, if
+the network allows gifted data to be gifted again, and it expires on the
+bundle's validity. It cannot be sold to the provider and cannot be turned
+into airtime. So every gift that lands is a lot: its size, its catalogue
+value, and the day it expires. Data going out of a pool spends the lot
+that expires soonest. What expires unused is written off as a loss the day
+it expires, with a line in the ledger, so the Pools page never overstates
+what you own. The checklist warns a week ahead, and the way out is the
+discount on that network's bundles and routing its bundle deliveries to
+the phone. Mark a bundle giftable only once you have checked, with a real
+gift, that the network lets our SIM gift it onward; otherwise the value
+can come in but never go out.
+
 ## Data pools
 
 Gifted data sits on our SIM. In the ledger it is a data pool per network,
