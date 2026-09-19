@@ -61,17 +61,15 @@ for (const p0 of profiles) {
   page.on("pageerror", (err) => problems.push(`${label0}: the browser reported an error: ${err.message}`));
   page.on("console", (msg) => { if (msg.type() === "error") problems.push(`${label0}: console error: ${msg.text()}`); });
   const tapOrClick = (sel) => (profile.hasTouch ? page.tap(sel) : page.click(sel));
-  // WebKit and Firefox refuse a screenshot taller than 32767 pixels, which the
-  // settings page reaches on a narrow phone; keep the top of such a page.
+  // WebKit and Firefox refuse a screenshot taller than 32767 device pixels.
+  // A phone draws two to four and a half device pixels per CSS pixel, so the
+  // settings page on an iPhone SE passes that long before its CSS height
+  // does; such a page keeps its first screen only.
+  const scale = profile.deviceScaleFactor ?? 1;
   const shot = async (p) => {
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
-    const width = await page.evaluate(() => document.documentElement.clientWidth);
     const path = `${out}/${engine}-${profile.name}${p.replace(/[^a-z0-9]+/gi, "-")}.png`;
-    // Both engines render the whole page before clipping, so a page that
-    // tall gets the first screen only.
-    if (height > 30_000) await page.screenshot({ path, fullPage: false });
-    else await page.screenshot({ path, fullPage: true });
-    void width;
+    await page.screenshot({ path, fullPage: height * scale <= 30_000 });
   };
   for (const p of publicPages) {
     await page.goto(base + p);
