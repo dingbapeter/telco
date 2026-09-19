@@ -1,44 +1,47 @@
+/* Colours are written out in full rather than as variables, so browsers without them
+   (Opera Mini's extreme mode, old Android browsers) keep every colour and border. Palette:
+   ink #1b1b1b, muted #5a5a5a, line #d9d9d9, paper #ffffff, wash #f4f4f2, ok #1d6b3a,
+   bad #9a1b1b, info #1f4e79, accent #0b5d4a. */
 /* The sender's pages. A few kilobytes, cached once, no fonts, no images. */
-:root { --ink: #1b1b1b; --muted: #5a5a5a; --line: #d9d9d9; --paper: #fff; --wash: #f4f4f2; --ok: #1d6b3a; --ok-wash: #e6f3ea; --bad: #9a1b1b; --bad-wash: #fbe9e9; --info: #1f4e79; --info-wash: #e8f0f8; --accent: #0b5d4a; }
 * { box-sizing: border-box; }
-html { font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--wash); }
+html { font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1b1b1b; background: #f4f4f2; }
 body { margin: 0; }
-a { color: var(--accent); }
-.top { background: var(--paper); border-bottom: 1px solid var(--line); padding: 0.7rem 1rem; display: flex; gap: 0.8rem; align-items: baseline; }
-.brand { font-weight: 700; font-size: 1.2rem; color: var(--ink); text-decoration: none; }
-.tag { color: var(--muted); font-size: 0.9rem; }
+a { color: #0b5d4a; }
+.top { background: #ffffff; border-bottom: 1px solid #d9d9d9; padding: 0.7rem 1rem; display: flex; gap: 0.8rem; align-items: baseline; }
+.brand { font-weight: 700; font-size: 1.2rem; color: #1b1b1b; text-decoration: none; }
+.tag { color: #5a5a5a; font-size: 0.9rem; }
 .main { padding: 1rem; max-width: 36rem; margin: 0 auto; }
-.foot { padding: 1rem; text-align: center; color: var(--muted); font-size: 0.9rem; }
+.foot { padding: 1rem; text-align: center; color: #5a5a5a; font-size: 0.9rem; }
 h1 { font-size: 1.35rem; line-height: 1.3; margin: 0 0 0.6rem; }
 h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
 p { margin: 0.5rem 0; }
-.muted { color: var(--muted); }
+.muted { color: #5a5a5a; }
 .facts { padding-left: 1.2rem; }
-.panel { background: var(--paper); border: 1px solid var(--line); padding: 1rem; margin: 0.8rem 0; }
+.panel { background: #ffffff; border: 1px solid #d9d9d9; padding: 1rem; margin: 0.8rem 0; }
 .field { margin: 0.7rem 0; }
 label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
 input, select { width: 100%; padding: 0.7rem; font: inherit; border: 1px solid #999; border-radius: 4px; background: #fff; }
-button, .button { display: inline-block; width: 100%; text-align: center; font: inherit; font-weight: 600; padding: 0.8rem 1rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 4px; cursor: pointer; margin-top: 0.5rem; text-decoration: none; }
-button.secondary { background: #fff; color: var(--accent); }
+button, .button { display: inline-block; width: 100%; text-align: center; font: inherit; font-weight: 600; padding: 0.8rem 1rem; border: 1px solid #0b5d4a; background: #0b5d4a; color: #fff; border-radius: 4px; cursor: pointer; margin-top: 0.5rem; text-decoration: none; }
+button.secondary { background: #fff; color: #0b5d4a; }
 .hp { position: absolute; left: -9999px; width: 1px; height: 1px; }
-.notice { padding: 0.75rem 1rem; border-left: 4px solid; margin: 0.75rem 0; background: var(--paper); }
-.notice-ok { border-color: var(--ok); background: var(--ok-wash); }
-.notice-problem { border-color: var(--bad); background: var(--bad-wash); }
-.notice-info { border-color: var(--info); background: var(--info-wash); }
+.notice { padding: 0.75rem 1rem; border-left: 4px solid; margin: 0.75rem 0; background: #ffffff; }
+.notice-ok { border-color: #1d6b3a; background: #e6f3ea; }
+.notice-problem { border-color: #9a1b1b; background: #fbe9e9; }
+.notice-info { border-color: #1f4e79; background: #e8f0f8; }
 .big { white-space: nowrap; }
 .dial-label { margin-top: 1rem; font-weight: 600; }
-.dial { font-size: 1.3rem; font-weight: 700; letter-spacing: 0.04em; background: var(--paper); border: 2px solid var(--ink); padding: 0.7rem; text-align: center; overflow-wrap: anywhere; user-select: all; }
-.ref { margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 0.8rem; }
-.ref dt { color: var(--muted); font-size: 0.9rem; }
+.dial { font-size: 1.3rem; font-weight: 700; letter-spacing: 0.04em; background: #ffffff; border: 2px solid #1b1b1b; padding: 0.7rem; text-align: center; overflow-wrap: anywhere; user-select: all; }
+.ref { margin-top: 1.5rem; border-top: 1px solid #d9d9d9; padding-top: 0.8rem; }
+.ref dt { color: #5a5a5a; font-size: 0.9rem; }
 .ref dd { margin: 0 0 0.6rem; }
-.deal { background: var(--ok-wash); border-left: 4px solid var(--ok); padding: 0.6rem 0.8rem; }
+.deal { background: #e6f3ea; border-left: 4px solid #1d6b3a; padding: 0.6rem 0.8rem; }
 .agentnav { font-size: 0.95rem; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 0.6rem; }
-.card { background: var(--paper); border: 1px solid var(--line); padding: 0.7rem; }
-.card .label { font-size: 0.85rem; color: var(--muted); }
+.card { background: #ffffff; border: 1px solid #d9d9d9; padding: 0.7rem; }
+.card .label { font-size: 0.85rem; color: #5a5a5a; }
 .card .value { font-size: 1.3rem; font-weight: 700; }
-table { width: 100%; border-collapse: collapse; background: var(--paper); font-size: 0.95rem; }
-th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--line); }
+table { width: 100%; border-collapse: collapse; background: #ffffff; font-size: 0.95rem; }
+th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #d9d9d9; }
 .num { text-align: right; }
 /* Shown by the script for the right kind of phone; without it, both are shown so nothing is lost. */
 .android-only, .iphone-only { display: block; }
@@ -46,3 +49,9 @@ th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--line)
 .scroll { overflow-x: auto; max-width: 100%; }
 .scroll table { min-width: max-content; }
 .main { min-width: 0; }
+
+/* Browsers before flex gap: space the items with margins instead. */
+@supports not (gap: 1rem) {
+  .row > * { margin: 0.3rem; }
+  .nav > * { margin-right: 0.6rem; }
+}

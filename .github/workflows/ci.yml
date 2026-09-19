@@ -104,9 +104,13 @@ jobs:
           path: bridge-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-  phones:
-    name: Phone sweep
+  browsers:
+    name: Browser sweep (${{ matrix.engine }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit, firefox]
     services:
       postgres:
         image: postgres:16
@@ -123,7 +127,8 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/telco_test
-      SHOTS_DIR: phone-shots
+      SHOTS_DIR: browser-shots
+      ENGINES: ${{ matrix.engine }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -131,12 +136,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npx playwright install --with-deps chromium
-      - name: Every page at iPhone and Android sizes, by touch
-        run: scripts/phone-sweep.sh
+      - run: npx playwright install --with-deps ${{ matrix.engine }}
+      - name: Every page on this engine at phone, tablet and desktop sizes, and without script
+        run: scripts/browser-sweep.sh
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phone-screenshots
-          path: phone-shots
+          name: screenshots-${{ matrix.engine }}
+          path: browser-shots

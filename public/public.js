@@ -13,6 +13,7 @@
         var key = digits.slice(0, 6);
         if (key === last) return;
         last = key;
+        if (!window.fetch) return;
         fetch("/api/network-for?number=" + encodeURIComponent(input.value))
           .then(function (r) { return r.json(); })
           .then(function (d) { if (d.network && select.value === "") select.value = d.network; })
@@ -25,7 +26,8 @@
 // iPhones refuse to dial a code with stars and hashes from a link, so on
 // an iPhone the dial pad link is hidden and the copy instruction shown.
 (function () {
-  var iphone = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+  var ua = navigator.userAgent;
+  var iphone = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   var show = document.querySelectorAll(iphone ? ".iphone-only" : ".android-only");
   for (var i = 0; i < show.length; i++) show[i].style.display = "block";
   var buttons = document.querySelectorAll("button.copy");

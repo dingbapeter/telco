@@ -7,5 +7,5 @@ coverage/
 !.env.example
 *.log
 .DS_Store
-phone-shots/
-phone-shots.server.log
+browser-shots/
+browser-shots.server.log

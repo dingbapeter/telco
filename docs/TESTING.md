@@ -280,28 +280,45 @@ hash. The mutation that makes the application process a duplicate is caught
 by the pool balance staying the same, not by an error, because the unique
 index still stops the second row.
 
-## Phone sweep (`scripts/phone-sweep.sh`)
+## Browser sweep (`scripts/browser-sweep.sh`)
 
-Drives every public, agent and command centre page at four phone sizes
-(iPhone SE, iPhone 13, Pixel 5, Galaxy S9+) with touch, and fails the
-build if a page scrolls sideways, a text field is under 16 pixels (which
-makes iPhones zoom in), or a button is smaller than a fingertip. It runs
-in CI on every push with the screenshots kept as a build artifact, and by
-hand with `npm run phones`. First run on 19 September 2026 found three
-things, all fixed: two tables on the Pools page and one on the agent's
-wallet page pushed the narrowest screens sideways, command centre buttons
-were a pixel or two under a fingertip, and the log-out link was small.
+Drives every public, agent and command centre page on three browser
+engines, each in its own CI job on every push: Chromium, which is what
+Chrome, Edge, Samsung Internet and Opera run; WebKit, which is Safari on
+iPhone, iPad and Mac; and Firefox. At eight sizes: iPhone SE, iPhone 13,
+Pixel 5, Galaxy S9+ with touch, iPad, a laptop, a desktop, and a phone with
+script switched off, which is how Opera Mini's extreme mode and a blocked
+script leave a page. On each, a sender gets a quote choosing the networks
+by hand and a buyer places an order. It fails the build on a page that
+scrolls sideways, a text field under 16 pixels (iPhones zoom in), a button
+smaller than a fingertip, or any error the browser reports. Screenshots
+are kept with each run as `screenshots-<engine>`. By hand: `npm run
+browsers`, with `ENGINES=chromium,webkit,firefox` to run all three.
 
-What the sweep cannot do: it runs Chromium at iPhone sizes, not Safari,
-because Safari's engine is not available on the build machine. The two
-iPhone behaviours that differ are handled in code and held by tests:
-iPhones refuse to dial a code with stars and hashes from a link, so the
-page shows a copy button and a plain instruction on iPhones and the dial
-pad link on Android; and iPhones need a PNG home-screen icon, which every
-page carries beside the manifest Android uses. The sending phone app is
-Android only by nature: iOS lets no app read incoming text messages or
-dial codes, so the phones holding our SIMs must be Android. Customers on
-iPhones use the web pages like everyone else.
+Findings on 19 September 2026, all fixed: three tables pushed the
+narrowest phones sideways; command centre buttons were under a fingertip;
+the stylesheets leaned on CSS variables, which Opera Mini's extreme mode
+and old Android browsers drop, so every colour is now written out in
+full; the network lookup called a function old browsers lack, now
+guarded; and the sweep itself tripped the product's own limit of five
+quotes per address in ten minutes, which is the flood guard doing its job,
+so the flows run on three profiles.
+
+Handled in code and held by tests because no emulator shows them: iPhones
+refuse to dial a code with stars and hashes from a link, so the page shows
+a copy button and a plain instruction on iPhones and the dial pad link on
+Android; and every page carries a home-screen icon for iPhones beside the
+manifest Android uses.
+
+What is not covered: real devices. The build machine cannot run Safari's
+engine, so here the sweep runs Chromium only; CI runs all three engines
+on GitHub's machines. Old Android browsers are covered by the no-script
+run and the plain stylesheet, not by running them. The final word is one
+real phone of each kind opening the site after deployment.
+
+The sending phone app is Android only by nature: iOS lets no app read
+incoming text messages or dial codes, so the phones holding our SIMs must
+be Android. Customers on any phone use the web pages.
 
 ## Prose check (`scripts/check-prose.sh`)
 

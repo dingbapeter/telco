@@ -14,7 +14,7 @@
     "check": "scripts/check-prose.sh && npm run typecheck && npm test",
     "start": "node src/main.ts",
     "mutations": "node scripts/mutation-check.ts",
-    "phones": "scripts/phone-sweep.sh"
+    "browsers": "scripts/browser-sweep.sh"
   },
   "dependencies": {
     "pg": "^8.13.0"
