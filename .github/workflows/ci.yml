@@ -103,3 +103,40 @@ jobs:
           name: telco-bridge-app
           path: bridge-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  phones:
+    name: Phone sweep
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: telco_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/telco_test
+      SHOTS_DIR: phone-shots
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Every page at iPhone and Android sizes, by touch
+        run: scripts/phone-sweep.sh
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-screenshots
+          path: phone-shots

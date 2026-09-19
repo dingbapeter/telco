@@ -10,7 +10,8 @@ body { margin: 0; }
 a { color: var(--accent); }
 .top { background: var(--paper); border-bottom: 1px solid var(--line); padding: 0.6rem 1rem; }
 .brand { font-weight: 700; text-decoration: none; color: var(--ink); display: inline-block; margin-bottom: 0.3rem; }
-.nav { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; font-size: 0.95rem; align-items: center; }
+.nav { display: flex; flex-wrap: wrap; gap: 0 0.5rem; font-size: 0.95rem; align-items: center; }
+.nav a { padding: 0.6rem 0.2rem; display: inline-block; }
 .nav a[aria-current="page"] { font-weight: 700; text-decoration: none; }
 .main { padding: 1rem; max-width: 64rem; margin: 0 auto; }
 h1 { font-size: 1.4rem; margin: 0 0 0.75rem; }
@@ -30,7 +31,9 @@ p { margin: 0.4rem 0; }
 table { width: 100%; border-collapse: collapse; background: var(--paper); font-size: 0.95rem; }
 th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
-.scroll { overflow-x: auto; }
+.scroll { overflow-x: auto; max-width: 100%; }
+.main { min-width: 0; }
+.scroll table { min-width: max-content; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 form.panel, .panel { background: var(--paper); border: 1px solid var(--line); padding: 0.9rem 1rem; margin: 0.75rem 0; }
 label { display: block; font-weight: 600; margin: 0.6rem 0 0.2rem; }
@@ -39,10 +42,10 @@ input[type=text], input[type=email], input[type=password], input[type=number], s
   width: 100%; padding: 0.55rem 0.6rem; font: inherit; border: 1px solid #999; border-radius: 3px; background: #fff;
 }
 textarea { min-height: 5rem; }
-button { font: inherit; padding: 0.55rem 1rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 3px; cursor: pointer; margin-top: 0.6rem; }
+button { font: inherit; padding: 0.7rem 1rem; min-height: 44px; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 3px; cursor: pointer; margin-top: 0.6rem; }
 button.secondary { background: #fff; color: var(--accent); }
 button.danger { background: #fff; color: var(--bad); border-color: var(--bad); }
-button.link { background: none; border: none; color: var(--accent); padding: 0; margin: 0; text-decoration: underline; }
+button.link { background: none; border: none; color: var(--accent); padding: 0.6rem 0.2rem; margin: 0; min-height: 44px; text-decoration: underline; }
 form.inline { display: inline; }
 .row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .row > * { flex: 1 1 10rem; }

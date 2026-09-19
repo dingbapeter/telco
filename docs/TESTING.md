@@ -280,6 +280,29 @@ hash. The mutation that makes the application process a duplicate is caught
 by the pool balance staying the same, not by an error, because the unique
 index still stops the second row.
 
+## Phone sweep (`scripts/phone-sweep.sh`)
+
+Drives every public, agent and command centre page at four phone sizes
+(iPhone SE, iPhone 13, Pixel 5, Galaxy S9+) with touch, and fails the
+build if a page scrolls sideways, a text field is under 16 pixels (which
+makes iPhones zoom in), or a button is smaller than a fingertip. It runs
+in CI on every push with the screenshots kept as a build artifact, and by
+hand with `npm run phones`. First run on 19 September 2026 found three
+things, all fixed: two tables on the Pools page and one on the agent's
+wallet page pushed the narrowest screens sideways, command centre buttons
+were a pixel or two under a fingertip, and the log-out link was small.
+
+What the sweep cannot do: it runs Chromium at iPhone sizes, not Safari,
+because Safari's engine is not available on the build machine. The two
+iPhone behaviours that differ are handled in code and held by tests:
+iPhones refuse to dial a code with stars and hashes from a link, so the
+page shows a copy button and a plain instruction on iPhones and the dial
+pad link on Android; and iPhones need a PNG home-screen icon, which every
+page carries beside the manifest Android uses. The sending phone app is
+Android only by nature: iOS lets no app read incoming text messages or
+dial codes, so the phones holding our SIMs must be Android. Customers on
+iPhones use the web pages like everyone else.
+
 ## Prose check (`scripts/check-prose.sh`)
 
 Checked on 17 September 2026 against a staged README.md.

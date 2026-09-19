@@ -28,7 +28,11 @@ export function shell(title: string, body: Html, options: { refreshSeconds?: num
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${options.refreshSeconds ? html`<meta http-equiv="refresh" content="${options.refreshSeconds}">` : ""}
 <title>${title} | Telco</title>
+<meta name="theme-color" content="#0b5d4a">
 <link rel="stylesheet" href="/static/public.css">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
 </head>
 <body>
 <header class="top"><a class="brand" href="/">Telco</a><span class="tag">Move airtime between networks</span></header>
@@ -173,7 +177,11 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
         ${dial
           ? html`<p class="dial-label">On your ${from} line, dial:</p>
             <p class="dial">${shown}</p>
-            ${needsPin ? html`<p>Put your ${from} transfer PIN where it says PIN. We never ask for your PIN and you should never type it on a website.</p>` : html`<p><a class="button" href="tel:${encodeURIComponent(dial).replaceAll("%2A", "*")}">Open the dial pad with this code</a></p>`}`
+            <p><button type="button" class="secondary copy" data-copy="${shown}">Copy the code</button></p>
+            ${needsPin
+              ? html`<p>Put your ${from} transfer PIN where it says PIN. We never ask for your PIN and you should never type it on a website.</p>`
+              : html`<p class="android-only"><a class="button" href="tel:${encodeURIComponent(dial).replaceAll("%2A", "*")}">Open the dial pad with this code</a></p>
+                <p class="iphone-only">On an iPhone, copy the code, open the Phone app, paste it into the keypad and press call.</p>`}`
           : html`<p>Open your ${from} ${inBundle ? "data gifting" : "airtime transfer"} menu and ${inBundle ? `gift ${inBundle.name}` : `send exactly ${formatNaira(t.requested_kobo)}`} to ${t.receiving_number}.</p>`}
         <p>${outBundle ? "Send the exact amount from the number you gave. A different amount is held for a person, who will return it." : inBundle ? "Gift that exact bundle from the number you gave. A different bundle is kept for a person to look at." : "Send the exact amount from the number you gave. If a different amount arrives, we move what arrived and the fee is worked out on that."}</p>`;
       refresh = 20;

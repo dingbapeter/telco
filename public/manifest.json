@@ -1,0 +1,14 @@
+{
+  "name": "Telco",
+  "short_name": "Telco",
+  "description": "Move airtime and data between networks",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#f4f4f2",
+  "theme_color": "#0b5d4a",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

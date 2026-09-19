@@ -81,7 +81,10 @@ export function page(o: PageOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${o.title} | Telco command centre</title>
+<meta name="theme-color" content="#0b5d4a">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
 </head>
 <body>
 <header class="top"><a class="brand" href="/admin">Telco command centre</a>${nav}</header>

@@ -40,3 +40,9 @@ button.secondary { background: #fff; color: var(--accent); }
 table { width: 100%; border-collapse: collapse; background: var(--paper); font-size: 0.95rem; }
 th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--line); }
 .num { text-align: right; }
+/* Shown by the script for the right kind of phone; without it, both are shown so nothing is lost. */
+.android-only, .iphone-only { display: block; }
+.copy { width: auto; }
+.scroll { overflow-x: auto; max-width: 100%; }
+.scroll table { min-width: max-content; }
+.main { min-width: 0; }

@@ -8,7 +8,10 @@ only on the network's own message, seen by our own phone.
 
 ## What you need
 
-- One Android phone per network (Android 7 or newer; a cheap one is fine),
+- One Android phone per network (Android 7 or newer; a cheap one is fine).
+  It must be Android: iPhones let no app read incoming text messages or
+  dial codes on the phone's behalf, so an iPhone cannot do this job.
+  Customers on iPhones use the web pages like everyone else. The phone,
   with our SIM for that network in it, on charge, with data on.
 - The server running on an https address.
 

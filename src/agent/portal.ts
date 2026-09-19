@@ -108,9 +108,9 @@ export function registerAgentPortal(app: App, options: AgentOptions): void {
             <div class="card"><div class="label">Commission this month</div><div class="value">${formatNaira(month.commission)}</div></div></div>
           ${pending.length ? notice("info", `Withdrawal of ${pending.map((w) => formatNaira(w.amount_kobo)).join(", ")} requested and waiting to be paid.`) : ""}
           <h2>Your last purchases</h2>
-          <table><tr><th>Reference</th><th>What</th><th class="num">Paid</th><th>State</th></tr>
+          <div class="scroll"><table><tr><th>Reference</th><th>What</th><th class="num">Paid</th><th>State</th></tr>
             ${recent.map((o) => html`<tr><td><a href="/o/${o.reference}">${o.reference}</a></td><td>${formatNaira(o.face_kobo)} ${NAMES[o.network_code]} to ${mask(o.recipient_number)}</td><td class="num">${formatNaira(o.price_kobo)}</td><td>${o.state.replaceAll("_", " ")}</td></tr>`)}
-            ${recent.length === 0 ? html`<tr><td colspan="4" class="muted">Nothing yet.</td></tr>` : ""}</table>
+            ${recent.length === 0 ? html`<tr><td colspan="4" class="muted">Nothing yet.</td></tr>` : ""}</table></div>
           <form method="post" action="/agent/logout">${csrf(s)}<button type="submit" class="secondary">Log out</button></form>`),
       };
     }),

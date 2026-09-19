@@ -41,9 +41,9 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
       ${lots.length === 0 ? html`<tr><td colspan="6" class="muted">No gifted data held.</td></tr>` : ""}
     </table></div>
     <h2>All accounts</h2>
-    <table><tr><th>Account</th><th>Kind</th><th class="num">Balance</th></tr>
+    <div class="scroll"><table><tr><th>Account</th><th>Kind</th><th class="num">Balance</th></tr>
       ${all.map((a) => html`<tr><td>${a.name}<br><code>${a.code}</code></td><td>${a.kind}</td><td class="num">${money(a.balanceKobo)}</td></tr>`)}
-    </table>
+    </table></div>
     <h2>Record airtime or money you put in</h2>
     <p class="muted">Airtime bought onto a SIM goes into that network's pool. Money paid into the provider's wallet goes into the provider wallet.</p>
     <form method="post" action="/admin/pools/fund" class="panel">${csrf(req)}
@@ -66,10 +66,10 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
       <button type="submit" class="danger">Record loss</button>
     </form>
     <h2>Latest ledger entries</h2>
-    <table><tr><th>When</th><th>Entry</th><th>Reference</th></tr>
+    <div class="scroll"><table><tr><th>When</th><th>Entry</th><th>Reference</th></tr>
       ${journals.rows.map((j) => html`<tr><td>${when(j.posted_at)}</td><td>${j.description}</td><td>${j.reference ?? ""}</td></tr>`)}
       ${journals.rows.length === 0 ? html`<tr><td colspan="3" class="muted">Nothing yet.</td></tr>` : ""}
-    </table>`;
+    </table></div>`;
   return { kind: "html", status, body: page({ title: "Pools", admin: req.admin, current: "/admin/pools", body }) };
 }
 

@@ -55,12 +55,26 @@ test("a quote sends the sender to a page that says exactly what to dial, to whic
   assert.match(text, /Reference TX-/);
 });
 
-test("a network whose code has no PIN gets a one-tap link that opens the dial pad with the code", async () => {
+test("a network whose code has no PIN gets a one-tap link for Android and a copy button with a plain instruction for iPhones, which cannot dial codes from a link", async () => {
   await addReceivingNumber("08029990001", "AIRTEL");
   const b = new Browser(base);
   const r = await quote(b, { sender: "08021234567", from: "AIRTEL", recipient: "08031234567", to: "MTN" });
   const page = await b.get(r.location!);
-  assert.match(page.text, /href="tel:\*432\*500\*08029990001%23"/);
+  assert.match(page.text, /class="android-only"><a class="button" href="tel:\*432\*500\*08029990001%23"/);
+  assert.match(page.text, /class="iphone-only">On an iPhone, copy the code, open the Phone app/);
+  assert.match(page.text, /<button type="button" class="secondary copy" data-copy="\*432\*500\*08029990001#">Copy the code<\/button>/);
+});
+
+test("every page carries the home-screen icons and manifest for both platforms, and they are served with the right types", async () => {
+  const b = new Browser(base);
+  const home = await b.get("/");
+  assert.match(home.text, /rel="apple-touch-icon" href="\/static\/icon-180.png"/);
+  assert.match(home.text, /rel="manifest" href="\/static\/manifest.json"/);
+  for (const [path, type] of [["/static/manifest.json", "application/manifest+json"], ["/static/icon.svg", "image/svg+xml"], ["/static/icon-180.png", "image/png"], ["/static/icon-512.png", "image/png"]] as const) {
+    const r = await fetch(base + path);
+    assert.equal(r.status, 200, path);
+    assert.equal(r.headers.get("content-type"), type, path);
+  }
 });
 
 test("the sender's own numbers are never shown in full on a page whose link might be shared", async () => {
@@ -175,7 +189,7 @@ test("the sender's pages are small enough for a weak connection", async () => {
   const status = await b.get(r.location!);
   const css = await (await fetch(`${base}/static/public.css`)).text();
   const js = await (await fetch(`${base}/static/public.js`)).text();
-  for (const [name, text, limit] of [["home", home.text, 8_000], ["status", status.text, 6_000], ["css", css, 4_000], ["js", js, 2_000]] as const) {
+  for (const [name, text, limit] of [["home", home.text, 8_000], ["status", status.text, 6_000], ["css", css, 4_000], ["js", js, 3_000]] as const) {
     assert.ok(Buffer.byteLength(text) < limit, `${name} is ${Buffer.byteLength(text)} bytes, over ${limit}`);
   }
 });

@@ -131,7 +131,7 @@ export class App {
     if (!file.startsWith(publicDir)) return send(res, { kind: "text", status: 404, body: "Not found" });
     try {
       const body = await readFile(file);
-      const type = file.endsWith(".css") ? "text/css; charset=utf-8" : file.endsWith(".js") ? "text/javascript; charset=utf-8" : "application/octet-stream";
+      const type = file.endsWith(".css") ? "text/css; charset=utf-8" : file.endsWith(".js") ? "text/javascript; charset=utf-8" : file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".png") ? "image/png" : file.endsWith(".json") ? "application/manifest+json" : "application/octet-stream";
       res.writeHead(200, { "content-type": type, "cache-control": "public, max-age=3600" });
       res.end(body);
     } catch {
