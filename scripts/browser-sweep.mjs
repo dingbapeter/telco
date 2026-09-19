@@ -67,8 +67,11 @@ for (const p0 of profiles) {
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
     const width = await page.evaluate(() => document.documentElement.clientWidth);
     const path = `${out}/${engine}-${profile.name}${p.replace(/[^a-z0-9]+/gi, "-")}.png`;
-    if (height > 30_000) await page.screenshot({ path, fullPage: true, clip: { x: 0, y: 0, width, height: 30_000 } });
+    // Both engines render the whole page before clipping, so a page that
+    // tall gets the first screen only.
+    if (height > 30_000) await page.screenshot({ path, fullPage: false });
     else await page.screenshot({ path, fullPage: true });
+    void width;
   };
   for (const p of publicPages) {
     await page.goto(base + p);
