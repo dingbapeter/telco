@@ -72,3 +72,5 @@ tr.soon td { background: #fbe9e9; }
   .row > * { margin: 0.3rem; }
   .nav > * { margin-right: 0.6rem; }
 }
+.jump { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; }
+.jump a { padding: 0.5rem 0.2rem; display: inline-block; }

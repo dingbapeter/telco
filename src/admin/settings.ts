@@ -152,8 +152,9 @@ function settingsPage(req: Request, all: ResolvedSetting<SettingKey>[], messages
   const body = html`<h1>Settings</h1>
     <p class="muted">Every change takes effect on the next transfer. Nothing here needs a deploy. Every change is written to the audit log with your name.</p>
     ${top}
+    <p class="jump">Jump to: ${[...groups.keys()].map((g) => html`<a href="#group-${g.replaceAll(" ", "-")}">${g}</a>`)}</p>
     ${[...groups.entries()].map(
-      ([group, items]) => html`<h2>${group}</h2>
+      ([group, items]) => html`<h2 id="group-${group.replaceAll(" ", "-")}">${group}</h2>
         ${items.map((s) => {
           const spec = SETTINGS[s.key];
           return html`<form method="post" action="/admin/settings/${s.key}" class="panel" id="${s.key}">

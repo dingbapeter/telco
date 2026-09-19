@@ -61,7 +61,15 @@ for (const p0 of profiles) {
   page.on("pageerror", (err) => problems.push(`${label0}: the browser reported an error: ${err.message}`));
   page.on("console", (msg) => { if (msg.type() === "error") problems.push(`${label0}: console error: ${msg.text()}`); });
   const tapOrClick = (sel) => (profile.hasTouch ? page.tap(sel) : page.click(sel));
-  const shot = (p) => page.screenshot({ path: `${out}/${engine}-${profile.name}${p.replace(/[^a-z0-9]+/gi, "-")}.png`, fullPage: true });
+  // WebKit and Firefox refuse a screenshot taller than 32767 pixels, which the
+  // settings page reaches on a narrow phone; keep the top of such a page.
+  const shot = async (p) => {
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+    const width = await page.evaluate(() => document.documentElement.clientWidth);
+    const path = `${out}/${engine}-${profile.name}${p.replace(/[^a-z0-9]+/gi, "-")}.png`;
+    if (height > 30_000) await page.screenshot({ path, fullPage: true, clip: { x: 0, y: 0, width, height: 30_000 } });
+    else await page.screenshot({ path, fullPage: true });
+  };
   for (const p of publicPages) {
     await page.goto(base + p);
     await check(page, `${label0} ${p}`);
