@@ -72,7 +72,7 @@ export function registerAgentPortal(app: App, options: AgentOptions): void {
     "/agent/login",
     async (req, db) => {
       try {
-        const { token } = await agentLogin(db, req.form.get("phone") ?? "", req.form.get("password") ?? "");
+        const { token } = await agentLogin(db, req.form.get("phone") ?? "", req.form.get("password") ?? "", Date.now(), req.ip);
         return { kind: "redirect", to: "/agent", headers: { "set-cookie": cookie(AGENT_SESSION_COOKIE, token, options.secureCookies, AGENT_SESSION_DAYS * 86_400) } };
       } catch (err) {
         if (err instanceof UserFacingError) return loginPage(err.message, req.form.get("phone") ?? "");

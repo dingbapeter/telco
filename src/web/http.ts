@@ -38,8 +38,10 @@ const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", 
 export class App {
   private routes: Route[] = [];
   private db: pg.Pool;
-  constructor(db: pg.Pool) {
+  private publicBaseUrl: string;
+  constructor(db: pg.Pool, publicBaseUrl = "") {
     this.db = db;
+    this.publicBaseUrl = publicBaseUrl;
   }
 
   private add(method: string, pathPattern: string, handler: Handler, auth: boolean): void {
@@ -86,9 +88,23 @@ export class App {
       form,
       rawBody,
       cookies,
-      ip: req.socket.remoteAddress ?? "",
+      ip: clientAddress(req),
       raw: req,
     };
+
+    // A form posted from another site carries an Origin that is not ours.
+    // Checked before anything else a post does, and before the session's
+    // own token, so it also guards the pages that have no session yet: the
+    // two login forms. A request with no Origin at all is let through,
+    // because some old phone browsers send none, and the token check below
+    // still stands behind it.
+    if (req.method === "POST" && !this.originAllowed(req)) {
+      return send(res, {
+        kind: "html",
+        status: 403,
+        body: page({ title: "Not accepted", admin: request.admin, body: notice("problem", "That form was sent from another website, so it was not accepted. Open the page here and try again.") }),
+      });
+    }
 
     const session = await sessionFromToken(this.db, cookies[SESSION_COOKIE]);
     if (session) {
@@ -100,7 +116,7 @@ export class App {
       if (route.method !== request.method) continue;
       const m = route.pattern.exec(url.pathname);
       if (!m) continue;
-      route.keys.forEach((k, i) => request.query.set(k, decodeURIComponent(m[i + 1]!)));
+      route.keys.forEach((k, i) => request.query.set(k, safeDecode(m[i + 1]!)));
       if (route.auth && !request.admin) {
         return send(res, { kind: "redirect", to: `/admin/login?next=${encodeURIComponent(url.pathname)}` });
       }
@@ -126,13 +142,26 @@ export class App {
     send(res, { kind: "html", status: 404, body: page({ title: "Not found", admin: request.admin, body: notice("problem", "There is no page at this address.") }) });
   }
 
+  private originAllowed(req: IncomingMessage): boolean {
+    const origin = req.headers.origin;
+    if (!origin || origin === "null") return true;
+    if (!this.publicBaseUrl) return true;
+    try {
+      return new URL(origin).origin === new URL(this.publicBaseUrl).origin;
+    } catch {
+      return false;
+    }
+  }
+
   private async serveStatic(pathname: string, res: ServerResponse): Promise<void> {
     const file = path.normalize(path.join(publicDir, pathname.slice("/static/".length)));
-    if (!file.startsWith(publicDir)) return send(res, { kind: "text", status: 404, body: "Not found" });
+    // The separator matters: without it a folder beside this one whose name
+    // merely starts the same way would pass.
+    if (!file.startsWith(publicDir + path.sep)) return send(res, { kind: "text", status: 404, body: "Not found" });
     try {
       const body = await readFile(file);
       const type = file.endsWith(".css") ? "text/css; charset=utf-8" : file.endsWith(".js") ? "text/javascript; charset=utf-8" : file.endsWith(".svg") ? "image/svg+xml" : file.endsWith(".png") ? "image/png" : file.endsWith(".json") ? "application/manifest+json" : "application/octet-stream";
-      res.writeHead(200, { "content-type": type, "cache-control": "public, max-age=3600" });
+      res.writeHead(200, { "content-type": type, "cache-control": "public, max-age=3600", ...SECURITY_HEADERS });
       res.end(body);
     } catch {
       send(res, { kind: "text", status: 404, body: "Not found" });
@@ -140,11 +169,35 @@ export class App {
   }
 }
 
+// A half written percent escape is a mistake, not a crime: the raw text is
+// used rather than throwing, which would turn a stray "%" in an address or
+// a cookie into a page that says something went wrong.
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+// Behind the web server that holds the certificate, every request arrives
+// from this machine, so the address of the person making it is the last one
+// that server wrote. Straight from the socket when there is no such server.
+export function clientAddress(req: IncomingMessage): string {
+  const socketAddress = req.socket.remoteAddress ?? "";
+  const local = socketAddress === "127.0.0.1" || socketAddress === "::1" || socketAddress === "::ffff:127.0.0.1";
+  if (!local) return socketAddress;
+  const forwarded = req.headers["x-forwarded-for"];
+  const chain = Array.isArray(forwarded) ? forwarded.join(",") : (forwarded ?? "");
+  const last = chain.split(",").map((p) => p.trim()).filter(Boolean).pop();
+  return last ?? socketAddress;
+}
+
 function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of (header ?? "").split(";")) {
     const i = part.indexOf("=");
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i > 0) out[part.slice(0, i).trim()] = safeDecode(part.slice(i + 1).trim());
   }
   return out;
 }

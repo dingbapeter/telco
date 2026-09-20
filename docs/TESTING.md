@@ -280,6 +280,31 @@ hash. The mutation that makes the application process a duplicate is caught
 by the pool balance staying the same, not by an error, because the unique
 index still stops the second row.
 
+## Security review (20 September 2026)
+
+Four readings of the whole code in parallel: the way people sign in, the
+way money moves, the public web surface, and secrets with the phones.
+Everything they reported was checked against the code before anything
+changed. What was fixed, with the test that holds it, is recorded against
+each suite above. Two notes belong here.
+
+The first is a mutation that cannot be made to fail. The check that a
+static file lies inside the public folder now compares with the separator,
+so a folder beside it whose name merely starts the same way cannot pass.
+Removing that separator leaves every test green, because the address parser
+removes the dot segments before the check ever runs, so no request can
+reach such a folder anyway. The guard is a second defence, kept for the day
+the first one changes, and it is not in the mutation list because nothing
+observable turns red.
+
+The second is what a test cannot see. A login for an address nobody has an
+account for now checks the password against a stand in, so it costs the
+same as a real one and nobody can learn who has an account by timing the
+answer. A test that measured the time would be a test that fails on a busy
+machine, so what is held instead is that the stand in is a real stored
+password of the same shape and cost, and the mutation that turns it into a
+malformed one turns the suite red.
+
 ## Browser sweep (`scripts/browser-sweep.sh`)
 
 Drives every public, agent and command centre page on three browser

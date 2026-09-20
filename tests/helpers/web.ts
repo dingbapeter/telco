@@ -8,13 +8,21 @@ export const ADMIN = { email: "founder@example.com", name: "Founder", password: 
 // A real server on a random port, and a client that keeps cookies the way a
 // browser does and never follows redirects, so every test sees exactly what
 // the browser would be told.
-export async function startServer(): Promise<{ base: string; server: Server }> {
-  const app = buildApp(pool, { secureCookies: false });
-  const server = app.listen(0);
+export async function startServer(options: { knowsItsAddress?: boolean } = {}): Promise<{ base: string; server: Server }> {
+  // Two servers in the tests: most know nothing of their public address,
+  // as a developer's machine does; one is told its own address so the
+  // check on where a form came from can be exercised.
+  const server = buildApp(pool, { secureCookies: false }).listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : 0;
-  return { base: `http://127.0.0.1:${port}`, server };
+  const base = `http://127.0.0.1:${port}`;
+  if (!options.knowsItsAddress) return { base, server };
+  server.close();
+  await new Promise<void>((resolve) => server.once("close", () => resolve()));
+  const told = buildApp(pool, { secureCookies: false, publicBaseUrl: base }).listen(port);
+  await new Promise<void>((resolve) => told.once("listening", resolve));
+  return { base, server: told };
 }
 
 export class Browser {
@@ -47,11 +55,11 @@ export class Browser {
     return { status: res.status, location: res.headers.get("location"), text };
   }
 
-  async post(path: string, fields: Record<string, string>, withCsrf = true): Promise<{ status: number; location: string | null; text: string }> {
+  async post(path: string, fields: Record<string, string>, withCsrf = true, extraHeaders: Record<string, string> = {}): Promise<{ status: number; location: string | null; text: string }> {
     const body = new URLSearchParams(withCsrf ? { _csrf: this.csrf, ...fields } : fields);
     const res = await fetch(this.base + path, {
       method: "POST",
-      headers: { cookie: this.header(), "content-type": "application/x-www-form-urlencoded" },
+      headers: { cookie: this.header(), "content-type": "application/x-www-form-urlencoded", ...extraHeaders },
       body: body.toString(),
       redirect: "manual",
     });

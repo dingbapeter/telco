@@ -1,11 +1,12 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import type pg from "pg";
-import { hashPassword, verifyPassword } from "./auth.ts";
+import { DUMMY_HASH, hashPassword, verifyPassword } from "./auth.ts";
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { applyBasisPoints, assertKobo, formatNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
+import { clearLoginFailures, loginWait, recordLoginFailure, resetLoginThrottle } from "./throttle.ts";
 import { getSettingValue, getSettingValues } from "./settings.ts";
 
 export type Agent = { id: number; code: string; name: string; phone: string; email: string | null; active: boolean; created_at: Date };
@@ -69,33 +70,37 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-const failures = new Map<string, { count: number; until: number }>();
 export function resetAgentLoginLimits(): void {
-  failures.clear();
+  resetLoginThrottle();
 }
 
-export async function agentLogin(db: Queryable, phoneText: string, password: string, now = Date.now()): Promise<{ token: string; csrfToken: string; agent: Agent }> {
+export async function agentLogin(db: Queryable, phoneText: string, password: string, now = Date.now(), from = ""): Promise<{ token: string; csrfToken: string; agent: Agent }> {
   const enabled = await getSettingValue(db, "agent.enabled");
   if (!enabled) throw new UserFacingError("agents_off", "Agent accounts are not open at the moment.");
   const phone = normaliseNigerianNumber(phoneText) ?? phoneText.trim();
-  const f = failures.get(phone);
-  if (f && f.until > now) throw new UserFacingError("too_many_attempts", `Too many wrong passwords. Wait ${Math.ceil((f.until - now) / 1000)} seconds and try again.`);
+  const wait = loginWait(phone, from, now);
+  if (wait > 0) throw new UserFacingError("too_many_attempts", `Too many wrong passwords. Wait ${Math.ceil(wait / 1000)} seconds and try again.`);
   const { rows } = await db.query<Agent & { password_hash: string }>("SELECT id, code, name, phone, email, active, created_at, password_hash FROM agents WHERE phone = $1", [phone]);
   const a = rows[0];
   const ok = a !== undefined && a.active && (await verifyPassword(password, a.password_hash));
   if (!ok) {
-    const g = failures.get(phone) ?? { count: 0, until: 0 };
-    g.count += 1;
-    g.until = now + Math.min(60_000, 1_000 * 2 ** Math.min(g.count, 6));
-    failures.set(phone, g);
+    // A number nobody has an account for costs the same to try as one that
+    // does, so nobody can walk the numbers to learn who our agents are.
+    if (a === undefined) await verifyPassword(password, DUMMY_HASH);
+    recordLoginFailure(phone, from, now);
     throw new UserFacingError("bad_login", "That phone number and password do not match.");
   }
-  failures.delete(phone);
+  clearLoginFailures(phone);
   const token = randomBytes(32).toString("base64url");
   const csrfToken = randomBytes(16).toString("base64url");
   await db.query("INSERT INTO agent_sessions (token_hash, agent_id, expires_at, csrf_token) VALUES ($1, $2, now() + make_interval(days => $3), $4)", [hashToken(token), a!.id, AGENT_SESSION_DAYS, csrfToken]);
   const { password_hash: _ignored, ...safe } = a!;
   return { token, csrfToken, agent: safe };
+}
+
+export async function forgetOldAgentSessions(db: Queryable): Promise<number> {
+  const { rowCount } = await db.query("DELETE FROM agent_sessions WHERE expires_at < now()");
+  return rowCount ?? 0;
 }
 
 export async function agentFromToken(db: Queryable, token: string | undefined): Promise<{ agent: Agent; csrfToken: string } | undefined> {

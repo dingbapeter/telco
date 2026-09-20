@@ -4,7 +4,7 @@ import { after, before, beforeEach, test } from "node:test";
 import { balance } from "../src/ledger.ts";
 import { naira } from "../src/money.ts";
 import { getSetting } from "../src/settings.ts";
-import { createAdmin } from "../src/auth.ts";
+import { createAdmin, forgetOldSessions } from "../src/auth.ts";
 import { getTransfer, quoteTransfer, recordInbound } from "../src/transfers.ts";
 import { addReceivingNumber, as, clean, fundPool, pool } from "./helpers/db.ts";
 import { ADMIN, Browser, oks, problems, seedAdmin, startServer } from "./helpers/web.ts";
@@ -243,4 +243,34 @@ test("every value written into a page is escaped", async () => {
   const page = await b.get("/admin/inbound");
   assert.doesNotMatch(page.text, /<script>alert/);
   assert.match(page.text, /&lt;script&gt;alert/);
+});
+
+test("resetting a password puts anyone already signed in with the old one out", async () => {
+  const b = new Browser(base);
+  await b.login();
+  assert.equal((await b.get("/admin")).status, 200);
+  await as("founder", (c) => createAdmin(c, { ...ADMIN, password: "a different long password" }));
+  const after = await b.get("/admin");
+  assert.equal(after.status, 303);
+  assert.match(after.location ?? "", /\/admin\/login/);
+});
+
+test("sessions that have run out are cleared away", async () => {
+  const b = new Browser(base);
+  await b.login();
+  const live = await pool.query("SELECT count(*)::int AS n FROM admin_sessions");
+  assert.equal(live.rows[0].n, 1);
+  await pool.query("UPDATE admin_sessions SET expires_at = now() - interval '1 day'");
+  const gone = await forgetOldSessions(pool);
+  assert.equal(gone, 1);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM admin_sessions")).rows[0].n, 0);
+});
+
+test("a setting name borrowed from the language itself is refused", async () => {
+  const b = new Browser(base);
+  await b.login();
+  await b.get("/admin/settings");
+  const r = await b.post("/admin/settings/constructor", { value: "1" });
+  assert.equal(r.status, 400);
+  assert.deepEqual(problems(r.text), ["There is no setting by that name."]);
 });

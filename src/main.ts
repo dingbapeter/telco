@@ -1,4 +1,6 @@
 import { buildApp } from "./app.ts";
+import { forgetOldAgentSessions } from "./agents.ts";
+import { forgetOldSessions } from "./auth.ts";
 import { loadConfig } from "./config.ts";
 import { closePool, getPool } from "./db.ts";
 import { migrate } from "./migrate.ts";
@@ -28,6 +30,8 @@ console.log(`Command centre listening on http://${config.host}:${config.port}/ad
 const timer = setInterval(() => {
   expireQuotes(db).catch((err: unknown) => console.error("expiring quotes failed", err));
   expireOrders(db).catch((err: unknown) => console.error("expiring orders failed", err));
+  forgetOldSessions(db).catch((err: unknown) => console.error("clearing old sessions failed", err));
+  forgetOldAgentSessions(db).catch((err: unknown) => console.error("clearing old agent sessions failed", err));
 }, 60_000);
 
 // Automatic payouts run only when the provider's keys are in the environment

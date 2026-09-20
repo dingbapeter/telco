@@ -21,7 +21,7 @@ import { registerBridge } from "./web/bridge.ts";
 import { App } from "./web/http.ts";
 
 export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicBaseUrl?: string; paystack?: PaystackProvider | undefined }): App {
-  const app = new App(db);
+  const app = new App(db, options.publicBaseUrl ?? "");
   app.get("/health", async (_req, pool) => {
     // Knocks on the database rather than reporting that a connection string exists.
     await pool.query("SELECT 1");

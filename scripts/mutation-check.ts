@@ -8,6 +8,16 @@ import { readFileSync, writeFileSync } from "node:fs";
 type Mutation = { name: string; file: string; find: string; replace: string; suite: string; also?: { find: string; replace: string }[] };
 
 const MUTATIONS: Mutation[] = [
+  { name: "form from another site accepted", file: "src/web/http.ts", find: "if (req.method === \"POST\" && !this.originAllowed(req)) {", replace: "if (false) {", suite: "tests/web.test.ts" },
+  { name: "address taken from the socket behind the web server in front", file: "src/web/http.ts", find: "  return last ?? socketAddress;", replace: "  return socketAddress;", suite: "tests/web.test.ts" },
+  { name: "half written escape left to throw", file: "src/web/http.ts", find: "  try {\n    return decodeURIComponent(value);\n  } catch {\n    return value;\n  }", replace: "  return decodeURIComponent(value);", suite: "tests/web.test.ts" },
+  { name: "static files lose the security headers", file: "src/web/http.ts", find: "\"cache-control\": \"public, max-age=3600\", ...SECURITY_HEADERS", replace: "\"cache-control\": \"public, max-age=3600\"", suite: "tests/web.test.ts" },
+  { name: "password reset leaves the old sessions alive", file: "src/auth.ts", find: "  await db.query(\"DELETE FROM admin_sessions WHERE admin_id = $1\", [rows[0]!.id]);", replace: "", suite: "tests/admin.test.ts" },
+  { name: "sessions that ran out are kept", file: "src/auth.ts", find: "DELETE FROM admin_sessions WHERE expires_at < now()", replace: "DELETE FROM admin_sessions WHERE false", suite: "tests/admin.test.ts" },
+  { name: "setting name from the prototype accepted", file: "src/admin/settings.ts", find: "if (!Object.hasOwn(SETTINGS, key))", replace: "if (!(key in SETTINGS))", suite: "tests/admin.test.ts" },
+  { name: "one address may try every account unslowed", file: "src/throttle.ts", find: "const ADDRESS_FREE_TRIES = 20;", replace: "const ADDRESS_FREE_TRIES = 1_000_000;", suite: "tests/throttle.test.ts" },
+  { name: "what the throttle remembers is never forgotten", file: "src/throttle.ts", find: "  for (const [key, b] of buckets) if (b.touched + FORGET_AFTER_MS < now) buckets.delete(key);", replace: "", suite: "tests/throttle.test.ts" },
+  { name: "stand in password is not a real one", file: "src/auth.ts", find: "export const DUMMY_HASH = \"scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$\"", replace: "export const DUMMY_HASH = \"none$0$0$0$AAAAAAAAAAAAAAAAAAAAAA==$\"", suite: "tests/throttle.test.ts" },
   { name: "fee floor removed", file: "src/fees.ts", find: "if (fee < rule.floorKobo) fee = rule.floorKobo;", replace: "", suite: "tests/fees.test.ts" },
   { name: "fee ceiling removed", file: "src/fees.ts", find: "if (fee > rule.ceilingKobo) fee = rule.ceilingKobo;", replace: "", suite: "tests/fees.test.ts" },
   { name: "network share rounds to nearest instead of down", file: "src/fees.ts", find: "Math.floor((fee * rule.networkShareBasisPoints) / 10_000)", replace: "Math.round((fee * rule.networkShareBasisPoints) / 10_000)", suite: "tests/fees.test.ts" },

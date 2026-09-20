@@ -179,7 +179,7 @@ export function registerSettings(app: App): void {
 
   app.post("/admin/settings/:key", async (req, db) => {
     const key = req.query.get("key") as SettingKey;
-    if (!(key in SETTINGS)) throw new UserFacingError("unknown_setting", "There is no setting by that name.");
+    if (!Object.hasOwn(SETTINGS, key)) throw new UserFacingError("unknown_setting", "There is no setting by that name.");
     const messages: Record<string, Html> = {};
     let status = 200;
     let top: Html;

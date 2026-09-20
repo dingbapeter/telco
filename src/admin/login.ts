@@ -28,7 +28,7 @@ export function registerLogin(app: App, secureCookies: boolean): void {
     "/admin/login",
     async (req, db) => {
       try {
-        const { token } = await login(db, req.form.get("email") ?? "", req.form.get("password") ?? "");
+        const { token } = await login(db, req.form.get("email") ?? "", req.form.get("password") ?? "", Date.now(), req.ip);
         const next = req.form.get("next") ?? "/admin";
         return {
           kind: "redirect",

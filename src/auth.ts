@@ -2,6 +2,7 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from "node:util";
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
+import { clearLoginFailures, loginWait, recordLoginFailure } from "./throttle.ts";
 
 type ScryptOptions = { N: number; r: number; p: number };
 const scrypt = promisify(
@@ -12,6 +13,10 @@ const scrypt = promisify(
 export type Admin = { id: number; email: string; name: string; active: boolean };
 
 export const SESSION_DAYS = 14;
+
+// A real stored password, for a password nobody has. Checked when the email
+// is unknown so that answer takes as long as a real one.
+export const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + "A".repeat(86) + "==";
 
 // scrypt with a per-password salt. The stored form names its own parameters
 // so they can change later without invalidating old passwords.
@@ -42,6 +47,10 @@ export async function createAdmin(db: Queryable, input: { email: string; name: s
      RETURNING id, email, name, active`,
     [email, input.name.trim() || email, hash],
   );
+  // A new password ends every session that was opened with the old one.
+  // Resetting a password is what a person does when they fear someone else
+  // is inside, so it has to put that person out.
+  await db.query("DELETE FROM admin_sessions WHERE admin_id = $1", [rows[0]!.id]);
   return rows[0]!;
 }
 
@@ -49,18 +58,13 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-// Failed logins are slowed per email so a stolen list of addresses cannot be
-// tried at speed. Kept in memory: a restart clears it, which is fine.
-const failures = new Map<string, { count: number; until: number }>();
-
 export function loginDelay(email: string, now = Date.now()): number {
-  const f = failures.get(email);
-  return f && f.until > now ? f.until - now : 0;
+  return loginWait(email.trim().toLowerCase(), "", now);
 }
 
-export async function login(db: Queryable, email: string, password: string, now = Date.now()): Promise<{ token: string; csrfToken: string; admin: Admin }> {
+export async function login(db: Queryable, email: string, password: string, now = Date.now(), from = ""): Promise<{ token: string; csrfToken: string; admin: Admin }> {
   const key = email.trim().toLowerCase();
-  const wait = loginDelay(key, now);
+  const wait = loginWait(key, from, now);
   if (wait > 0) {
     throw new UserFacingError("too_many_attempts", `Too many wrong passwords. Wait ${Math.ceil(wait / 1000)} seconds and try again.`);
   }
@@ -68,13 +72,14 @@ export async function login(db: Queryable, email: string, password: string, now 
   const admin = rows[0];
   const ok = admin !== undefined && admin.active && (await verifyPassword(password, admin.password_hash));
   if (!ok) {
-    const f = failures.get(key) ?? { count: 0, until: 0 };
-    f.count += 1;
-    f.until = now + Math.min(60_000, 1_000 * 2 ** Math.min(f.count, 6));
-    failures.set(key, f);
+    // An address nobody has an account for costs the same to try as one
+    // that does, so nobody can learn who has an account by timing the
+    // answer.
+    if (admin === undefined) await verifyPassword(password, DUMMY_HASH);
+    recordLoginFailure(key, from, now);
     throw new UserFacingError("bad_login", "That email and password do not match. Check both, or ask the founder to reset your password from the server.");
   }
-  failures.delete(key);
+  clearLoginFailures(key);
   const token = randomBytes(32).toString("base64url");
   const csrfToken = randomBytes(16).toString("base64url");
   await db.query(
@@ -100,6 +105,13 @@ export async function sessionFromToken(db: Queryable, token: string | undefined)
 
 export async function logout(db: Queryable, token: string | undefined): Promise<void> {
   if (token) await db.query("DELETE FROM admin_sessions WHERE token_hash = $1", [hashToken(token)]);
+}
+
+// Sessions that have run out are deleted rather than left lying about. A
+// row nobody can use is still a row someone could steal a token hash from.
+export async function forgetOldSessions(db: Queryable): Promise<number> {
+  const { rowCount } = await db.query("DELETE FROM admin_sessions WHERE expires_at < now()");
+  return rowCount ?? 0;
 }
 
 export async function countAdmins(db: Queryable): Promise<number> {
