@@ -11,12 +11,17 @@ import { actor, csrf, money, nairaField, requiredField, when } from "./shared.ts
 
 // Where value can be put in or lost from: a pool of airtime on each
 // network's SIM, or money held with the provider.
+// Short labels on purpose: a choice longer than the phone it is read on
+// cannot be read to the end anyway, and it drags the form off the screen.
+// The line under each list says what the choices mean.
 const FUNDABLE = [
-  ...NETWORK_CODES.map((c) => ({ code: `pool:${c}`, label: `${c} pool (airtime on our ${c} SIM)` })),
-  { code: "wallet:vtpass", label: "Provider wallet (money with VTpass)" },
-  { code: "cash:bank", label: "Bank account (money)" },
-  { code: "cash:paystack", label: "Paystack balance (money not yet settled to the bank)" },
+  ...NETWORK_CODES.map((c) => ({ code: `pool:${c}`, label: `${c} pool` })),
+  { code: "wallet:vtpass", label: "Provider wallet" },
+  { code: "cash:bank", label: "Bank account" },
+  { code: "cash:paystack", label: "Paystack balance" },
 ];
+const FUNDABLE_MEANING =
+  "A network pool is airtime on our SIM for that network. The provider wallet is money held with VTpass. The bank account and the Paystack balance are money.";
 
 async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200): Promise<{ kind: "html"; status: number; body: string }> {
   const [all, journals] = await Promise.all([
@@ -49,7 +54,7 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
     <form method="post" action="/admin/pools/fund" class="panel">${csrf(req)}
       <input type="hidden" name="key" value="${key}">
       <div class="row">
-        <div><label for="fnet">Into</label><select id="fnet" name="account">${FUNDABLE.map((a) => html`<option value="${a.code}">${a.label}</option>`)}</select></div>
+        <div><label for="fnet">Into <span class="hint">${FUNDABLE_MEANING}</span></label><select id="fnet" name="account">${FUNDABLE.map((a) => html`<option value="${a.code}">${a.label}</option>`)}</select></div>
         <div><label for="famt">Amount in naira</label><input id="famt" name="amount" type="text" inputmode="decimal" required></div>
       </div>
       <label for="fnote">Where it came from <span class="hint">for example "bought from the top-up provider, receipt 1234"</span></label><input id="fnote" name="note" type="text" required>
@@ -59,7 +64,7 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
     <form method="post" action="/admin/pools/loss" class="panel">${csrf(req)}
       <input type="hidden" name="key" value="${key}">
       <div class="row">
-        <div><label for="lnet">From</label><select id="lnet" name="account">${FUNDABLE.map((a) => html`<option value="${a.code}">${a.label}</option>`)}</select></div>
+        <div><label for="lnet">From <span class="hint">${FUNDABLE_MEANING}</span></label><select id="lnet" name="account">${FUNDABLE.map((a) => html`<option value="${a.code}">${a.label}</option>`)}</select></div>
         <div><label for="lamt">Amount in naira</label><input id="lamt" name="amount" type="text" inputmode="decimal" required></div>
       </div>
       <label for="lnote">What happened <span class="hint">for example "SIM barred by the network with N1,200 on it"</span></label><input id="lnote" name="note" type="text" required>

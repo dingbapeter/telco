@@ -20,7 +20,9 @@ p { margin: 0.5rem 0; }
 .panel { background: #ffffff; border: 1px solid #d9d9d9; padding: 1rem; margin: 0.8rem 0; }
 .field { margin: 0.7rem 0; }
 label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
-input, select { width: 100%; padding: 0.7rem; font: inherit; border: 1px solid #999; border-radius: 4px; background: #fff; }
+/* min-width: 0 keeps Safari from holding a select at the width of its
+   longest choice. */
+input, select { width: 100%; max-width: 100%; min-width: 0; padding: 0.7rem; font: inherit; border: 1px solid #999; border-radius: 4px; background: #fff; }
 button, .button { display: inline-block; width: 100%; text-align: center; font: inherit; font-weight: 600; padding: 0.8rem 1rem; border: 1px solid #0b5d4a; background: #0b5d4a; color: #fff; border-radius: 4px; cursor: pointer; margin-top: 0.5rem; text-decoration: none; }
 button.secondary { background: #fff; color: #0b5d4a; }
 .hp { position: absolute; left: -9999px; width: 1px; height: 1px; }
