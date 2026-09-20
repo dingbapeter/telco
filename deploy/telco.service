@@ -21,7 +21,19 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/srv/telco
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+# The source tree is read-only to the service itself: nothing it does needs
+# to write there, and a service that cannot rewrite its own code is one
+# less way in. ProtectSystem=strict above makes the whole filesystem
+# read-only, so this only says it out loud.
+ReadOnlyPaths=/srv/telco
 
 [Install]
 WantedBy=multi-user.target

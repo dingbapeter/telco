@@ -18,8 +18,17 @@ node --version   # must be 22.18 or later
 ## 2. The database
 
 ```
-sudo -u postgres psql -c "CREATE USER telco WITH PASSWORD 'choose-a-long-password';"
-sudo -u postgres psql -c "CREATE DATABASE telco OWNER telco;"
+sudo -u postgres psql
+```
+
+At the prompt, which does not put the password into your shell history or
+show it to anyone reading the list of running processes:
+
+```
+CREATE USER telco;
+\password telco
+CREATE DATABASE telco OWNER telco;
+\q
 ```
 
 Keep that password for step 4. It goes in one file and nowhere else.
@@ -66,8 +75,13 @@ Caddy fetches the certificate on the first request.
 
 ```
 cd /srv/telco
-sudo -u telco env $(sudo grep -v '^#' /etc/telco/telco.env | xargs) node scripts/create-admin.ts you@example.com "Your name"
+sudo systemd-run --quiet --pty --same-dir --uid=telco --property=EnvironmentFile=/etc/telco/telco.env node scripts/create-admin.ts you@example.com "Your name"
 ```
+
+The environment file is handed to the command by systemd rather than put on
+the command line. A command line is readable by anyone with an account on
+the server for as long as it runs, and it is kept in your shell history, so
+no secret ever belongs there.
 
 The password is typed at the prompt and not shown. Then open
 `https://your.domain/admin`, log in, and go to the launch checklist. It

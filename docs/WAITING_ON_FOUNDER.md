@@ -5,7 +5,7 @@ at the time it was asked. This file exists so that losing a conversation does
 not lose the decisions. When a decision is made, move it to the "Decided"
 section at the bottom with the date and the answer. Never delete a line.
 
-Last updated: 17 September 2026, after the founder described the product.
+Last updated: 20 September 2026, after the security reading.
 
 ## Needed before the core can be built
 
@@ -206,6 +206,39 @@ deployment (docs/DEPLOY.md), the VTpass account and keys
 phones and their set-up (docs/BRIDGE.md), the transfer and gifting codes
 and caps under Settings, and the name. Nothing in the build waits on any
 of it.
+
+### From the security reading, 20 September 2026
+
+Everything the reading found in the code is fixed and held by tests. Four
+things need you, and they are all part of the one deployment above.
+
+1. **Who each network's messages come from.** A message about airtime is
+   now believed only when it comes from one of the names that network sends
+   from. The settings start with MTN, Airtel, Glo and 9mobile. The moment
+   your SIMs are live, send yourself a small transfer on each network and
+   look at the Airtime in page: if a real message was kept for a person
+   with a note naming the sender, add that name under Settings, Networks,
+   who the network's messages come from. Until a name is right there, that
+   network's transfers wait for you rather than paying out.
+
+2. **Sign the phone app with your own key.** The app CI builds is now a
+   release build and unsigned, because a debug build can be read by anyone
+   who plugs the phone into a computer, which would hand them the PIN and
+   the token. docs/BRIDGE.md has the two commands. Make the key once, keep
+   the file, and never give it to a server, to this repository, or to me.
+
+3. **The data gifting code uses the bundle's name where the network wants a
+   plan code.** A dialling string cannot carry spaces, so a code like
+   `*141*{number}*{size}#` will not work as it stands on a real SIM. When
+   you have a phone in hand, dial the gifting code by hand once, see what
+   the network actually asks for, and set the code to match.
+
+4. **Old sessions.** A command centre session lasts a fortnight and an
+   agent session a month, and nothing signs anyone out for being idle. For
+   a shop phone or a laptop left on a counter that may be too long. Say a
+   number and it becomes a setting; my recommendation is to leave it until
+   you have real staff, because signing yourself out every day while you
+   are the only user is a cost with no gain.
 
 ## Decided
 

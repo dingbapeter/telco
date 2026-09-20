@@ -22,6 +22,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Said out loud: the phone holding a SIM must not be one a
+            // computer can read the PIN and the token out of.
+            isDebuggable = false
         }
     }
     compileOptions {

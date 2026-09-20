@@ -4,7 +4,9 @@ build/
 coverage/
 .env
 .env.*
+*.env
 !.env.example
+!deploy/telco.env.example
 *.log
 .DS_Store
 browser-shots/

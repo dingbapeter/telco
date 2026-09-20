@@ -95,13 +95,18 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - name: Build the installable app
+        # A release build, not a debug one. A debug build can be read by
+        # anyone who plugs the phone into a computer, which would hand them
+        # the PIN and the token, and it is signed with a key that ships with
+        # every Android toolkit. This one is unsigned; the founder signs it
+        # on their own machine with a key nobody else holds.
         working-directory: bridge-android
-        run: ./gradlew --no-daemon :app:assembleDebug
-      - name: Publish the app file for the founder to download
+        run: ./gradlew --no-daemon :app:assembleRelease
+      - name: Publish the app file for the founder to sign and install
         uses: actions/upload-artifact@v4
         with:
           name: telco-bridge-app
-          path: bridge-android/app/build/outputs/apk/debug/app-debug.apk
+          path: bridge-android/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
 
   browsers:

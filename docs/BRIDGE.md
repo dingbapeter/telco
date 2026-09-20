@@ -23,15 +23,27 @@ only on the network's own message, seen by our own phone.
    page shows a token once. Keep that screen open.
 3. Get the app. Every push to the repository builds it in CI; open the
    latest green run on GitHub, under Actions, and download the file called
-   `telco-bridge-app`. Unzip it and copy `app-debug.apk` to the phone, or
-   open the link on the phone.
-4. On the phone, allow installing from that source and install it.
-5. Open the app. Enter the server address (starting with https) and the
-   token from step 2. Tap "Save and connect".
-6. Tap "Allow reading text messages" and allow it.
-7. Tap "Turn off battery saving for this app" and allow it. Without this,
+   `telco-bridge-app`. Unzip it: inside is `app-release-unsigned.apk`.
+4. Sign it on your own machine, with a key only you hold. Make the key once
+   and keep the file safe; every later version of the app must be signed
+   with the same one or the phone will refuse to update it.
+
+   ```
+   keytool -genkey -v -keystore telco-bridge.jks -alias telco -keyalg RSA -keysize 2048 -validity 10000
+   apksigner sign --ks telco-bridge.jks --out telco-bridge.apk app-release-unsigned.apk
+   ```
+
+   The key never goes on a server, into this repository, or to anybody
+   else, including me. Then copy `telco-bridge.apk` to the phone.
+5. On the phone, allow installing from that source and install it.
+6. Open the app. Enter the server address (starting with https) and the
+   token from step 2. Tap "Save and connect". Changing the address later
+   clears the token and the PIN on purpose, so anyone who points the phone
+   at their own server gets neither.
+7. Tap "Allow reading text messages" and allow it.
+8. Tap "Turn off battery saving for this app" and allow it. Without this,
    some phones stop the app after a few hours.
-8. The status at the bottom should read "Reported in; nothing waiting."
+9. The status at the bottom should read "Reported in; nothing waiting."
    within a minute. In the command centre, the Phone bridge page shows the
    phone as heard from, and the launch checklist line for that network
    turns green.
