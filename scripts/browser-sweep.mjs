@@ -38,12 +38,25 @@ async function check(page, label) {
     const doc = document.documentElement;
     const overflow = doc.scrollWidth - doc.clientWidth;
     const describe = (el) => `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${el.className ? "." + String(el.className).trim().split(/\s+/).join(".") : ""}`;
-    // Anything past the right edge that is not inside a scrolling table
-    // wrapper, so a sideways scroll names its cause.
+    // Everything past the right edge, widest first, each with the scrolling
+    // box that holds it if there is one, so a sideways scroll names its cause
+    // whether or not a table wrapper was meant to absorb it.
+    const scrollerOf = (el) => {
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const o = getComputedStyle(p).overflowX;
+        if (o === "auto" || o === "scroll") return p;
+      }
+      return null;
+    };
     const past = [...document.querySelectorAll("body *")]
-      .filter((el) => !el.parentElement.closest(".scroll") && el.getBoundingClientRect().right > doc.clientWidth + 1)
-      .slice(0, 8)
-      .map((el) => `${describe(el)} ends at ${Math.round(el.getBoundingClientRect().right)}px of ${doc.clientWidth}`);
+      .map((el) => ({ el, right: el.getBoundingClientRect().right }))
+      .filter((x) => x.right > doc.clientWidth + 1)
+      .sort((a, b) => b.right - a.right)
+      .slice(0, 6)
+      .map((x) => {
+        const holder = scrollerOf(x.el);
+        return `${describe(x.el)} ends at ${Math.round(x.right)}px of ${doc.clientWidth}${holder ? ` inside ${describe(holder)} which scrolls` : ""}`;
+      });
     const smallInputs = [...document.querySelectorAll("input:not([type=hidden]), select, textarea")]
       .map((el) => ({ name: el.name || el.id, size: parseFloat(getComputedStyle(el).fontSize) }))
       .filter((x) => x.size < 16);
@@ -52,9 +65,9 @@ async function check(page, label) {
       .filter((x) => x.h > 0 && (x.h < 44 || x.w < 44));
     // The security policy allows no inline style, so a page must carry none.
     const inlineStyles = [...document.querySelectorAll("style, [style]")].slice(0, 5).map(describe);
-    return { overflow, past, smallInputs, smallTaps, inlineStyles };
+    return { overflow, past, bodyWidth: Math.round(document.body.getBoundingClientRect().width), viewport: doc.clientWidth, smallInputs, smallTaps, inlineStyles };
   });
-  if (r.overflow > 1) problems.push(`${label}: page scrolls sideways by ${r.overflow}px; past the edge: ${r.past.join("; ") || "nothing outside a table wrapper"}`);
+  if (r.overflow > 1) problems.push(`${label}: page scrolls sideways by ${r.overflow}px, body ${r.bodyWidth}px of ${r.viewport}px; past the edge: ${r.past.join("; ") || "no element, so a margin or a scrolling box is the cause"}`);
   for (const i of r.smallInputs) problems.push(`${label}: field "${i.name}" is ${i.size}px, iPhones zoom in below 16px`);
   for (const t of r.smallTaps) problems.push(`${label}: button "${t.text}" is ${Math.round(t.w)}x${Math.round(t.h)}px, smaller than a fingertip`);
   for (const e of r.inlineStyles) problems.push(`${label}: ${e} carries an inline style, which the security policy refuses`);
