@@ -1,8 +1,7 @@
-import { randomBytes } from "node:crypto";
 import type pg from "pg";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
-import { balance, postJournal } from "../ledger.ts";
+import { balance, lockAccount, postJournal } from "../ledger.ts";
 import { getSettingValue, NETWORK_CODES } from "../settings.ts";
 import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
@@ -25,7 +24,6 @@ async function settlementPage(req: Request, db: pg.Pool, message?: Html, status 
        FROM ledger_postings p WHERE p.account_code LIKE 'owed:%' AND p.account_code <> 'owed:senders' AND p.account_code <> 'owed:buyers' AND p.amount_kobo > 0 GROUP BY 1`,
     )
   ).rows;
-  const key = randomBytes(8).toString("hex");
   const sections: Html[] = [];
   for (const c of NETWORK_CODES) {
     const owed = await balance(db, `owed:${c}`);
@@ -47,7 +45,7 @@ async function settlementPage(req: Request, db: pg.Pool, message?: Html, status 
     <p class="muted">Every figure is read from the ledger as the page opens. A network's share accrues on each completed transfer out of that network at the percentage set under Settings, Fees. Zero until the network signs.</p>
     ${sections}
     <h2>Record a payment to a network</h2>
-    <form method="post" action="/admin/settlement/pay" class="panel">${csrf(req)}<input type="hidden" name="key" value="${key}">
+    <form method="post" action="/admin/settlement/pay" class="panel">${csrf(req)}
       <div class="row"><div><label for="net">Network</label><select id="net" name="network">${NETWORK_CODES.map((c) => html`<option value="${c}">${c}</option>`)}</select></div>
       <div><label for="amt">Amount paid, naira</label><input id="amt" name="amount" type="text" inputmode="decimal" required></div></div>
       <label for="ref">Bank reference</label><input id="ref" name="reference" type="text" required>
@@ -63,21 +61,26 @@ export function registerSettlement(app: App): void {
       if (!(NETWORK_CODES as readonly string[]).includes(network)) throw new UserFacingError("unknown_network", "Choose a network.");
       const amount = nairaField(req.form, "amount", "Amount paid");
       const reference = requiredField(req.form, "reference", "Bank reference");
-      const key = requiredField(req.form, "key", "Form key");
-      const owed = await balance(db, `owed:${network}`);
-      if (amount > owed) throw new UserFacingError("overpaid", `${money(amount)} is more than the ${money(owed)} owed to ${network}. Nothing was recorded.`);
-      const r = await withActor(actor(req.admin), (c) =>
-        postJournal(c, {
-          idempotencyKey: `settlement:${network}:${key}`,
+      const r = await withActor(actor(req.admin), async (c) => {
+        // Read what is owed under the same lock that the posting takes, so
+        // two people pressing Pay at the same moment cannot each see the
+        // whole amount and between them pay the network twice.
+        await lockAccount(c, `owed:${network}`);
+        const owed = await balance(c, `owed:${network}`);
+        if (amount > owed) throw new UserFacingError("overpaid", `${money(amount)} is more than the ${money(owed)} owed to ${network}. Nothing was recorded.`);
+        return postJournal(c, {
+          // The key names the payment itself, not a number the form carried,
+          // so the same bank reference cannot be recorded twice under two
+          // different keys.
+          idempotencyKey: `settlement:${network}:${reference.trim().toLowerCase()}`,
           description: `Settlement paid to ${network}, bank reference ${reference}`,
           reference,
           postings: [
             { account: `owed:${network}`, amountKobo: amount },
             { account: "cash:bank", amountKobo: -amount },
           ],
-        }),
-        db,
-      );
+        });
+      }, db);
       return settlementPage(req, db, r.posted ? notice("ok", `Recorded ${money(amount)} paid to ${network}.`) : notice("info", "That payment was already recorded."));
     } catch (err) {
       if (err instanceof UserFacingError) return settlementPage(req, db, notice("problem", err.message), 400);

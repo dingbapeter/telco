@@ -266,12 +266,16 @@ test("the settlement page shows each network's accrued share, what was paid, and
   const text = strip(page.text);
   assert.match(text, /MTN Share of fee 25.00 percent/);
   assert.match(text, /Owed now N5/);
-  const key = /name="key" value="([^"]+)"/.exec(page.text)![1]!;
-  const tooMuch = await b.post("/admin/settlement/pay", { network: "MTN", amount: "10", reference: "X", key });
+  const tooMuch = await b.post("/admin/settlement/pay", { network: "MTN", amount: "10", reference: "X" });
   assert.match(problems(tooMuch.text).join(" "), /more than the N5 owed to MTN/);
-  const ok = await b.post("/admin/settlement/pay", { network: "MTN", amount: "5", reference: "X", key });
+  const ok = await b.post("/admin/settlement/pay", { network: "MTN", amount: "5", reference: "X" });
   assert.match(oks(ok.text).join(" "), /Recorded N5 paid to MTN/);
   assert.equal(await balance(pool, "owed:MTN"), 0);
+  assert.equal(await balance(pool, "cash:bank"), -naira(5));
+  // Recording it again pays nothing twice: there is nothing owed now, and
+  // even if there were, the journal is keyed on the bank reference.
+  const again = await b.post("/admin/settlement/pay", { network: "MTN", amount: "5", reference: "X" });
+  assert.match(problems(again.text).join(" "), /more than the N0 owed to MTN/);
   assert.equal(await balance(pool, "cash:bank"), -naira(5));
 });
 

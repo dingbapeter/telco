@@ -89,6 +89,20 @@ repository secrets at all, so there is nothing there to leak.
   holding an unlocked phone can open the app. Keep a lock screen on every
   sending phone, and pause the phone in the command centre the moment one
   goes missing: paused phones are refused at once.
+- **A referral cookie anyone can set.** A visitor can put any published
+  agent code in their own browser and hand that agent the commission. They
+  can only give commission away, never take it, so this is an accounting
+  annoyance rather than a theft. If it is ever abused, the answer is to tie
+  the code to the visit that followed the link.
+- **A phone's token never expires.** It is revoked by pausing the phone,
+  which works at once, but there is no rotation on a schedule. Change the
+  token whenever a phone changes hands, by pausing that phone and adding it
+  again.
+- **A rare crash rather than a wrong number.** Two identical messages
+  arriving at the very same instant can leave one of them with a server
+  error instead of a quiet "already seen". The unique index still stops the
+  money being booked twice, and the phone sends the batch again, so nothing
+  is lost. Worth tidying, not worth risking the dedupe rules to tidy now.
 - **The people you let in.** Every administrator can see everything and
   move money. There are no roles yet. Give an account only to someone you
   would trust with the float.

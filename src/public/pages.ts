@@ -63,6 +63,11 @@ export async function networkForNumber(db: pg.Pool, number: string): Promise<Net
 const recent = new Map<string, number[]>();
 export const QUOTE_LIMIT = { count: 5, windowMs: 10 * 60_000 };
 export function tooManyQuotes(key: string, now = Date.now()): boolean {
+  // Numbers nobody has asked about for a while are forgotten, so a run of
+  // made-up numbers cannot grow this without end.
+  for (const [k, times] of recent) {
+    if (times.every((t) => now - t >= QUOTE_LIMIT.windowMs)) recent.delete(k);
+  }
   const times = (recent.get(key) ?? []).filter((t) => now - t < QUOTE_LIMIT.windowMs);
   if (times.length >= QUOTE_LIMIT.count) {
     recent.set(key, times);
@@ -72,6 +77,10 @@ export function tooManyQuotes(key: string, now = Date.now()): boolean {
   recent.set(key, times);
   return false;
 }
+export function quoteGuardSize(): number {
+  return recent.size;
+}
+
 export function resetQuoteLimits(): void {
   recent.clear();
 }
