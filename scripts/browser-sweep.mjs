@@ -64,10 +64,40 @@ async function check(page, label) {
       .map((el) => ({ text: (el.textContent || "").trim().slice(0, 30), h: el.getBoundingClientRect().height, w: el.getBoundingClientRect().width }))
       .filter((x) => x.h > 0 && (x.h < 44 || x.w < 44));
     // The security policy allows no inline style, so a page must carry none.
+    // Read before the probe below, which hides elements one at a time.
     const inlineStyles = [...document.querySelectorAll("style, [style]")].slice(0, 5).map(describe);
-    return { overflow, past, bodyWidth: Math.round(document.body.getBoundingClientRect().width), viewport: doc.clientWidth, smallInputs, smallTaps, inlineStyles };
+    // When a page scrolls sideways and nothing obvious sticks out, hide each
+    // element in turn and see which one stops the scrolling. The deepest such
+    // element is the cause. Deliberately last: it changes the page while it
+    // runs and puts it back after each try.
+    const culprits = [];
+    if (overflow > 1) {
+      const depth = (el) => { let d = 0; for (let p = el.parentElement; p; p = p.parentElement) d += 1; return d; };
+      for (const el of document.querySelectorAll("body *")) {
+        const had = el.getAttribute("style");
+        el.style.display = "none";
+        const left = doc.scrollWidth - doc.clientWidth;
+        if (had === null) el.removeAttribute("style");
+        else el.setAttribute("style", had);
+        if (left <= 1) culprits.push({ what: describe(el), deep: depth(el) });
+      }
+      culprits.sort((a, b) => b.deep - a.deep);
+    }
+    return {
+      overflow,
+      past,
+      culprits: culprits.slice(0, 3).map((c) => c.what),
+      bodyWidth: Math.round(document.body.getBoundingClientRect().width),
+      viewport: doc.clientWidth,
+      smallInputs,
+      smallTaps,
+      inlineStyles,
+    };
   });
-  if (r.overflow > 1) problems.push(`${label}: page scrolls sideways by ${r.overflow}px, body ${r.bodyWidth}px of ${r.viewport}px; past the edge: ${r.past.join("; ") || "no element, so a margin or a scrolling box is the cause"}`);
+  if (r.overflow > 1) {
+    const cause = r.culprits.length > 0 ? `hiding ${r.culprits.join(" or ")} stops it` : "hiding any one element does not stop it";
+    problems.push(`${label}: page scrolls sideways by ${r.overflow}px, body ${r.bodyWidth}px, page area ${r.viewport}px; ${cause}; past the edge: ${r.past.join("; ") || "no element"}`);
+  }
   for (const i of r.smallInputs) problems.push(`${label}: field "${i.name}" is ${i.size}px, iPhones zoom in below 16px`);
   for (const t of r.smallTaps) problems.push(`${label}: button "${t.text}" is ${Math.round(t.w)}x${Math.round(t.h)}px, smaller than a fingertip`);
   for (const e of r.inlineStyles) problems.push(`${label}: ${e} carries an inline style, which the security policy refuses`);
