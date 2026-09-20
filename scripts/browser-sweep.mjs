@@ -37,17 +37,27 @@ async function check(page, label) {
   const r = await page.evaluate(() => {
     const doc = document.documentElement;
     const overflow = doc.scrollWidth - doc.clientWidth;
+    const describe = (el) => `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${el.className ? "." + String(el.className).trim().split(/\s+/).join(".") : ""}`;
+    // Anything past the right edge that is not inside a scrolling table
+    // wrapper, so a sideways scroll names its cause.
+    const past = [...document.querySelectorAll("body *")]
+      .filter((el) => !el.parentElement.closest(".scroll") && el.getBoundingClientRect().right > doc.clientWidth + 1)
+      .slice(0, 8)
+      .map((el) => `${describe(el)} ends at ${Math.round(el.getBoundingClientRect().right)}px of ${doc.clientWidth}`);
     const smallInputs = [...document.querySelectorAll("input:not([type=hidden]), select, textarea")]
       .map((el) => ({ name: el.name || el.id, size: parseFloat(getComputedStyle(el).fontSize) }))
       .filter((x) => x.size < 16);
     const smallTaps = [...document.querySelectorAll("button, a.button, input[type=submit]")]
       .map((el) => ({ text: (el.textContent || "").trim().slice(0, 30), h: el.getBoundingClientRect().height, w: el.getBoundingClientRect().width }))
       .filter((x) => x.h > 0 && (x.h < 44 || x.w < 44));
-    return { overflow, smallInputs, smallTaps };
+    // The security policy allows no inline style, so a page must carry none.
+    const inlineStyles = [...document.querySelectorAll("style, [style]")].slice(0, 5).map(describe);
+    return { overflow, past, smallInputs, smallTaps, inlineStyles };
   });
-  if (r.overflow > 1) problems.push(`${label}: page scrolls sideways by ${r.overflow}px`);
+  if (r.overflow > 1) problems.push(`${label}: page scrolls sideways by ${r.overflow}px; past the edge: ${r.past.join("; ") || "nothing outside a table wrapper"}`);
   for (const i of r.smallInputs) problems.push(`${label}: field "${i.name}" is ${i.size}px, iPhones zoom in below 16px`);
   for (const t of r.smallTaps) problems.push(`${label}: button "${t.text}" is ${Math.round(t.w)}x${Math.round(t.h)}px, smaller than a fingertip`);
+  for (const e of r.inlineStyles) problems.push(`${label}: ${e} carries an inline style, which the security policy refuses`);
 }
 
 for (const engine of engines) {
@@ -59,7 +69,15 @@ for (const p0 of profiles) {
   const ctx = await browser.newContext({ ...profile, name: undefined });
   const page = await ctx.newPage();
   page.on("pageerror", (err) => problems.push(`${label0}: the browser reported an error: ${err.message}`));
-  page.on("console", (msg) => { if (msg.type() === "error") problems.push(`${label0}: console error: ${msg.text()}`); });
+  page.on("console", (msg) => {
+    if (msg.type() !== "error") return;
+    // Before each WebKit screenshot, Playwright appends an empty <style> to
+    // the page to settle animations, and the product's security policy
+    // refuses it. The page check proves no page of ours carries an inline
+    // style, so that refusal can only be the tool's own.
+    if (msg.text().includes("Refused to apply a stylesheet")) return;
+    problems.push(`${label0}: console error: ${msg.text()}`);
+  });
   const tapOrClick = (sel) => (profile.hasTouch ? page.tap(sel) : page.click(sel));
   // WebKit and Firefox refuse a screenshot taller than 32767 device pixels.
   // A phone draws two to four and a half device pixels per CSS pixel, so the

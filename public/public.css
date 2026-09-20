@@ -50,8 +50,10 @@ th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #d9d9d9; }
 .scroll table { min-width: max-content; }
 .main { min-width: 0; }
 
-/* Browsers before flex gap: space the items with margins instead. */
+/* Browsers before flex gap: space the items with margins instead. The
+   header is the one row on these pages; the cards fall back to a single
+   column, which needs no gap. */
 @supports not (gap: 1rem) {
-  .row > * { margin: 0.3rem; }
-  .nav > * { margin-right: 0.6rem; }
+  .top > * { margin-right: 0.8rem; }
+  .card { margin-bottom: 0.6rem; }
 }

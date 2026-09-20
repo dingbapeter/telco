@@ -38,7 +38,7 @@ form.panel, .panel { background: #ffffff; border: 1px solid #d9d9d9; padding: 0.
 label { display: block; font-weight: 600; margin: 0.6rem 0 0.2rem; }
 label .hint { display: block; font-weight: 400; color: #5a5a5a; font-size: 0.9rem; }
 input[type=text], input[type=email], input[type=password], input[type=number], select, textarea {
-  width: 100%; padding: 0.55rem 0.6rem; font: inherit; border: 1px solid #999; border-radius: 3px; background: #fff;
+  width: 100%; max-width: 100%; padding: 0.55rem 0.6rem; font: inherit; border: 1px solid #999; border-radius: 3px; background: #fff;
 }
 textarea { min-height: 5rem; }
 button { font: inherit; padding: 0.7rem 1rem; min-height: 44px; border: 1px solid #0b5d4a; background: #0b5d4a; color: #fff; border-radius: 3px; cursor: pointer; margin-top: 0.6rem; }
@@ -47,7 +47,10 @@ button.danger { background: #fff; color: #9a1b1b; border-color: #9a1b1b; }
 button.link { background: none; border: none; color: #0b5d4a; padding: 0.6rem 0.2rem; margin: 0; min-height: 44px; text-decoration: underline; }
 form.inline { display: inline; }
 .row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
-.row > * { flex: 1 1 10rem; }
+/* min-width: 0 lets a field shrink below the width its own text asks for.
+   Without it Safari keeps two fields at their natural width and the gap
+   between them pushes the page sideways on a 320 pixel phone. */
+.row > * { flex: 1 1 10rem; min-width: 0; }
 .state { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 0.85rem; background: #f4f4f2; border: 1px solid #d9d9d9; white-space: nowrap; }
 .state-completed, .state-refunded { background: #e6f3ea; border-color: #1d6b3a; }
 .state-held, .state-payout_failed, .state-awaiting_approval { background: #fbe9e9; border-color: #9a1b1b; }
