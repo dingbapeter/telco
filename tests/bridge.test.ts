@@ -192,3 +192,36 @@ test("the launch checklist says which network's phone is missing or quiet", asyn
   assert.match(quiet, /MTN phone has gone quiet/);
   assert.match(quiet, /battery saving is off/);
 });
+
+test("a text message pretending to be the network does not pay anybody", async () => {
+  // Anyone can send a text message that reads exactly like MTN's. Only a
+  // message from one of MTN's own senders is believed.
+  await addReceivingNumber("08039990001", "MTN");
+  const p = await phone();
+  const { transfer } = await as("sender", (c) =>
+    quoteTransfer(c, "sender", { fromNetwork: "MTN", toNetwork: "AIRTEL", senderNumber: "08031234567", recipientNumber: "08021234567", amountKobo: naira(500) }),
+  );
+  const forged = (await (await p.send([{ from: "08099998888", body: "You have received N500 airtime from 08031234567. Ref 77123" }])).json()) as { results: { outcome: string }[] };
+  assert.equal(forged.results[0]!.outcome, "unparsed");
+  assert.equal((await pool.query("SELECT state FROM transfers WHERE id = $1", [transfer.id])).rows[0].state, "awaiting_inbound");
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM inbound_notifications")).rows[0].n, 0);
+  const note = await pool.query("SELECT note FROM bridge_messages ORDER BY id DESC LIMIT 1");
+  assert.match(note.rows[0].note, /not one of the MTN senders we believe/);
+
+  // The same words from MTN itself are believed.
+  const real = (await (await p.send([{ from: "MTN", body: "You have received N500 airtime from 08031234567. Ref 77124" }])).json()) as { results: { outcome: string }[] };
+  assert.equal(real.results[0]!.outcome, "matched");
+});
+
+test("a sender name the network really uses can be added, and then its messages are believed", async () => {
+  await addReceivingNumber("08039990001", "MTN");
+  const p = await phone();
+  await as("sender", (c) =>
+    quoteTransfer(c, "sender", { fromNetwork: "MTN", toNetwork: "AIRTEL", senderNumber: "08031234567", recipientNumber: "08021234567", amountKobo: naira(500) }),
+  );
+  const before = (await (await p.send([{ from: "MTN-NG", body: "You have received N500 airtime from 08031234567. Ref 88123" }])).json()) as { results: { outcome: string }[] };
+  assert.equal(before.results[0]!.outcome, "unparsed");
+  await as("founder", (c) => setSetting(c, "founder", "network.sender_ids", { MTN: "MTN, MTN-NG", AIRTEL: "Airtel", GLO: "Glo", "9MOBILE": "9mobile" }));
+  const after = (await (await p.send([{ from: "MTN-NG", body: "You have received N500 airtime from 08031234567. Ref 88124" }])).json()) as { results: { outcome: string }[] };
+  assert.equal(after.results[0]!.outcome, "matched");
+});

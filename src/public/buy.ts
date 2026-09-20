@@ -155,7 +155,10 @@ export function registerBuy(app: App, options: PaymentOptions): void {
         });
         return { kind: "redirect", to: url };
       } catch (err) {
-        return orderPage(db, o, options, notice("problem", `Paying online did not start: ${(err as Error).message}. Try again in a minute, or pay by bank transfer below.`));
+        // The reason is for us, not for the visitor: it can name the
+        // provider, the address we call and part of their answer.
+        console.error("paystack initialize failed", err);
+        return orderPage(db, o, options, notice("problem", "Paying online did not start. Try again in a minute, or pay by bank transfer below."));
       }
     },
     false,
@@ -168,7 +171,11 @@ export function registerBuy(app: App, options: PaymentOptions): void {
     async (req, db) => {
       const reference = req.query.get("reference") ?? req.query.get("trxref") ?? "";
       if (reference.toUpperCase().startsWith("AT-")) {
-        if (options.paystack) {
+        // Only ask Paystack about a top-up we are actually waiting on.
+        // Otherwise anyone could make the server call Paystack all day by
+        // inventing references, and use up the rate limit real payments need.
+        const waiting = await db.query("SELECT 1 FROM agent_topups WHERE reference = $1 AND state = 'started'", [reference.toUpperCase()]);
+        if (options.paystack && waiting.rowCount) {
           const v = await options.paystack.verify(reference.toUpperCase());
           if (v.status === "success") await settleAgentTopUp(db, reference.toUpperCase(), v.amountKobo, v.feesKobo, options.paystack.cashAccount);
         }

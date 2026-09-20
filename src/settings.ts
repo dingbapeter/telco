@@ -39,6 +39,22 @@ function intBetween(min: number, max: number, unit: "kobo" | "basis points" | "m
   };
 }
 
+// A dialling code with a run of four or more digits and no {pin} in it is
+// almost always somebody's PIN typed in by hand. A PIN written here would
+// be sent to every phone, kept in the audit log and shown on the screen,
+// so it is refused with the placeholder named.
+function dialCode(max: number): Validator<string> {
+  const inner = text(max);
+  return (value) => {
+    const r = inner(value);
+    if (!r.ok) return r;
+    if (r.value !== "" && !r.value.includes("{pin}") && /\d{4,}/.test(r.value)) {
+      return { ok: false, reason: "must use {pin} where the PIN goes, never the PIN itself. The phone fills it in and it never leaves the phone" };
+    }
+    return r;
+  };
+}
+
 function perNetwork<T>(inner: Validator<T>): Validator<PerNetwork<T>> {
   return (value) => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -400,6 +416,16 @@ export const SETTINGS = {
     validate: perNetwork(intBetween(0, 10_000_000_000, "kobo")),
     format: each(kobo),
   }),
+  "network.sender_ids": define({
+    key: "network.sender_ids",
+    group: "Networks",
+    label: "Who the network's messages come from",
+    description:
+      "The names or short numbers the network's own text messages come from, separated by commas, for example MTN, MTNN, 131. A message about airtime is only believed when it comes from one of these, because anyone can send a text message that reads like one. A message from anywhere else is kept on the Airtime in page for a person to look at, with the sender named, so a missing name here is easy to spot and add. Empty means nothing on that network is believed.",
+    fallback: { MTN: "MTN", AIRTEL: "Airtel", GLO: "Glo", "9MOBILE": "9mobile" } as PerNetwork<string>,
+    validate: perNetwork(text(200)),
+    format: each((v) => (v === "" ? "nothing believed" : v)),
+  }),
   "network.inbound_pattern": define({
     key: "network.inbound_pattern",
     group: "Networks",
@@ -417,7 +443,7 @@ export const SETTINGS = {
     description:
       "The network's own code for gifting data to another number on the same network, with {number} and where the network needs them {size} and {pin}, for example *131*{number}*{size}#. Empty means data cannot be sent from this network yet.",
     fallback: emptyPerNetwork,
-    validate: perNetwork(text(60)),
+    validate: perNetwork(dialCode(60)),
     format: each((v) => (v === "" ? "not set" : v)),
   }),
   "network.data_inbound_pattern": define({
@@ -447,7 +473,7 @@ export const SETTINGS = {
     description:
       "The network's own airtime transfer code with {amount}, {number} and {pin} where they go, for example *321*{pin}*{amount}*{number}#. Empty means not yet entered.",
     fallback: emptyPerNetwork,
-    validate: perNetwork(text(60)),
+    validate: perNetwork(dialCode(60)),
     format: each((v) => (v === "" ? "not set" : v)),
   }),
 } as const;

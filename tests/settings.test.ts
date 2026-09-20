@@ -78,3 +78,12 @@ test("every setting in the registry has a label, a description and a fallback th
   const all = await getAllSettings(pool);
   assert.equal(all.length, Object.keys(SETTINGS).length);
 });
+
+test("a network code with a PIN typed into it instead of the placeholder is refused", async () => {
+  await assert.rejects(
+    as("founder", (c) => setSetting(c, "founder", "network.transfer_code", { MTN: "*321*4829*{amount}*{number}#", AIRTEL: "", GLO: "", "9MOBILE": "" })),
+    /must use \{pin\} where the PIN goes/,
+  );
+  // The same code with the placeholder is fine.
+  await as("founder", (c) => setSetting(c, "founder", "network.transfer_code", { MTN: "*321*{pin}*{amount}*{number}#", AIRTEL: "", GLO: "", "9MOBILE": "" }));
+});

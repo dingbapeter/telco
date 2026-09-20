@@ -78,13 +78,15 @@ test("every page carries the home-screen icons and manifest for both platforms, 
 });
 
 test("the sender's own numbers are never shown in full on a page whose link might be shared", async () => {
-  assert.equal(mask("08031234567"), "0803 *** 4567");
+  // Four digits at the end would leave only a thousand numbers to try for
+  // anyone holding the link, so only two are shown.
+  assert.equal(mask("08031234567"), "0803 **** 67");
   const b = new Browser(base);
   const r = await quote(b);
   const page = await b.get(r.location!);
   assert.doesNotMatch(page.text, /08031234567/);
   assert.doesNotMatch(page.text, /08021234567/);
-  assert.match(page.text, /0803 \*\*\* 4567/);
+  assert.match(page.text, /0803 \*\*\*\* 67/);
 });
 
 test("a mistake is shown on the form with what was typed kept, and nothing is created", async () => {
@@ -109,7 +111,7 @@ test("the status page follows the transfer from waiting, to received, to sending
   await as("bridge", (c) => recordInbound(c, "bridge", { networkCode: "MTN", receivingNumber: "08039990001", senderNumber: "08031234567", amountKobo: naira(500), rawText: "received", source: "bridge" }));
   let text = strip((await b.get(`/t/${ref}`)).text);
   assert.match(text, /We have your N500 on MTN/);
-  assert.match(text, /Sending N480 to 0802 \*\*\* 4567 on Airtel/);
+  assert.match(text, /Sending N480 to 0802 \*\*\*\* 67 on Airtel/);
   const t = (await getTransferByReference(pool, ref))!;
   await as("worker", (c) => startPayout(c, "worker", t.id));
   await as("worker", (c) => completePayout(c, "worker", t.id, "A-1"));

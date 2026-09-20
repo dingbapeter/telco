@@ -7,7 +7,7 @@ import { upsertBundle, type Bundle } from "../src/bundles.ts";
 import { balance } from "../src/ledger.ts";
 import { naira } from "../src/money.ts";
 import { createOrder, getOrder, recordPayment } from "../src/orders.ts";
-import { expireCommands, PhoneRail, readSentConfirmation } from "../src/sendingphone.ts";
+import { expireCommands, looksLikeTopUpCode, PhoneRail, queueCommand, readSentConfirmation } from "../src/sendingphone.ts";
 import { setSetting } from "../src/settings.ts";
 import { failPayout, getTransfer, quoteTransfer, recordInbound, startPayout, startRefund } from "../src/transfers.ts";
 import { chooseRail, runDeliveryCycle, runPayoutCycle } from "../src/worker.ts";
@@ -280,4 +280,23 @@ test("expiring commands touches only those still waiting", async () => {
   assert.equal(await expireCommands(pool, 10), 1);
   const states = (await pool.query("SELECT purpose, state FROM phone_commands ORDER BY purpose")).rows.map((r) => `${r.purpose}:${r.state}`);
   assert.deepEqual(states, ["a:unknown", "b:confirmed", "c:queued"]);
+});
+
+test("a code that would change the phone itself is never sent to a SIM", () => {
+  // A top-up code starts with one star. Two stars, or a star and a hash,
+  // is how a phone is told to forward its calls.
+  assert.equal(looksLikeTopUpCode("*321*{pin}*500*08021234567#"), true);
+  assert.equal(looksLikeTopUpCode("*141*08021234567*Airtel 1GB#"), true);
+  assert.equal(looksLikeTopUpCode("**21*08021234567#"), false);
+  assert.equal(looksLikeTopUpCode("*#21#"), false);
+  assert.equal(looksLikeTopUpCode("08021234567"), false);
+});
+
+test("a network code that does not read as a top-up code is refused before any SIM dials it", async () => {
+  await phone("AIRTEL");
+  await as("founder", (c) => setSetting(c, "founder", "network.transfer_code", { MTN: "", AIRTEL: "**21*{number}#", GLO: "", "9MOBILE": "" }));
+  await assert.rejects(
+    as("worker", (c) => queueCommand(c, { network: "AIRTEL", number: "08021234567", amountKobo: naira(500), purpose: "test" })),
+    /does not read as a top-up code/,
+  );
 });

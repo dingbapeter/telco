@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type pg from "pg";
 import { agentFromToken, agentLogin, agentLogout, AGENT_SESSION_DAYS, agentPrice, changeAgentPassword, requestWithdrawal, walletBalance, type Agent, type Withdrawal } from "../agents.ts";
 import { describeBundle, listBundles, type Bundle } from "../bundles.ts";
@@ -39,6 +40,13 @@ function checkCsrf(req: Request, s: Session): void {
 }
 
 export type AgentOptions = { paystack?: PaystackProvider | undefined; publicBaseUrl: string; secureCookies: boolean };
+
+// The reason a payment could not be started is for us, not for the agent:
+// it can name the provider, the address we call and part of their answer.
+function payOnlineFailed(err: unknown): string {
+  console.error("paystack initialize failed", err);
+  return "Paying online did not start. Try again in a minute, or top up by bank transfer.";
+}
 
 export function registerAgentPortal(app: App, options: AgentOptions): void {
   const loginPage = (problem?: string, phone = ""): Response => ({
@@ -175,13 +183,16 @@ export function registerAgentPortal(app: App, options: AgentOptions): void {
       const amount = parseNaira(req.form.get("amount") ?? "");
       const min = await getSettingValue(db, "agent.min_topup_kobo");
       if (amount === undefined || amount < min) return topupPage(db, s, notice("problem", `Enter an amount of at least ${formatNaira(min)}.`));
-      const reference = `AT-${s.agent.id}-${Date.now().toString(36).toUpperCase()}`;
+      // Random rather than the agent's row number and the time, which
+      // would tell anyone holding it who paid and when, and could be
+      // guessed.
+      const reference = `AT-${randomBytes(6).toString("base64url").toUpperCase().replace(/[^A-Z0-9]/g, "")}`;
       await db.query("INSERT INTO agent_topups (reference, agent_id, amount_kobo) VALUES ($1, $2, $3)", [reference, s.agent.id, amount]);
       try {
         const { url } = await options.paystack.initialize({ reference, amountKobo: amount, email: s.agent.email ?? `agent-${s.agent.phone}@${new URL(options.publicBaseUrl).hostname}`, callbackUrl: `${options.publicBaseUrl}/payments/paystack/callback` });
         return { kind: "redirect", to: url };
       } catch (err) {
-        return topupPage(db, s, notice("problem", `Paying online did not start: ${(err as Error).message}. Try again in a minute, or pay by bank transfer.`));
+        return topupPage(db, s, notice("problem", payOnlineFailed(err)));
       }
     }),
     false,

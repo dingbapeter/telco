@@ -152,7 +152,11 @@ test("an online top-up is started with the agent's own reference and credited on
   const start = await ab.post("/agent/topup", { amount: "3000" });
   assert.equal(start.status, 303);
   const reference = (ps.calls.find((c) => c.path === "/transaction/initialize")!.body as { reference: string; amount: number }).reference;
-  assert.match(reference, new RegExp(`^AT-${agentId}-`));
+  // The reference says nothing about who is paying or when: it would
+  // otherwise be both guessable and a way to read the agent's row number
+  // off a link.
+  assert.match(reference, /^AT-[A-Z0-9]{6,}$/);
+  assert.doesNotMatch(reference, new RegExp(`^AT-${agentId}-`));
   ps.verifications.set(reference, { status: "success", amount: naira(3_000), fees: 4_500, channel: "card" });
   const back = await ab.get(`/payments/paystack/callback?reference=${reference}`);
   assert.equal(back.location, "/agent/topup");

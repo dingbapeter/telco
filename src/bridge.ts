@@ -5,7 +5,7 @@ import { UserFacingError } from "./errors.ts";
 import { parseSizeMb } from "./bundles.ts";
 import { parseNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
-import { getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
+import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
 import { confirmFromMessage } from "./sendingphone.ts";
 import { recordInbound, type InboundOutcome } from "./transfers.ts";
 
@@ -129,11 +129,31 @@ export function parseDataMessage(body: string, pattern: string): ParsedData {
 
 export type IncomingMessage = { from: string; body: string; receivedAt?: string | undefined };
 
+// Most messages a phone gets are neither airtime nor data. Only the ones
+// that might be are kept for a person, so nobody is buried.
+function looksLikeValue(body: string): boolean {
+  return /receiv|credit|airtime|transfer|gift|data|MB|GB/i.test(body);
+}
+
+// True when a message came from one of the names the network sends from.
+// Compared without regard to case, spaces or the dashes some phones add.
+export function fromTheNetwork(from: string, senderIds: string): boolean {
+  const plain = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const allowed = senderIds.split(",").map(plain).filter(Boolean);
+  if (allowed.length === 0) return false;
+  return allowed.includes(plain(from));
+}
+
 export type MessageResult = { outcome: string; messageId: number; transferReference?: string };
 
 // Takes one text message from a phone. Records it whatever happens, and
 // when it reads as airtime received on our number, records that as an
 // inbound notification, which matches a waiting transfer if there is one.
+// A real network message is a line or two. Anything longer is matched only
+// as far as this, so a very long message sent on purpose cannot hold up the
+// server while a pattern works through it. The whole text is still kept.
+const MATCH_LIMIT = 1_000;
+
 export async function ingestMessage(db: pg.PoolClient, device: Device, receivingNumber: string | undefined, msg: IncomingMessage): Promise<MessageResult> {
   const receivedOnPhone = msg.receivedAt ? new Date(msg.receivedAt) : undefined;
   const validDate = receivedOnPhone && !Number.isNaN(receivedOnPhone.getTime()) ? receivedOnPhone : null;
@@ -153,24 +173,37 @@ export async function ingestMessage(db: pg.PoolClient, device: Device, receiving
     return transferReference ? { outcome, messageId: row.id, transferReference } : { outcome, messageId: row.id };
   };
 
+  const text = msg.body.slice(0, MATCH_LIMIT);
+
+  // Anyone can send a text message that reads like the network's own. Only
+  // a message from one of the names the network sends from is believed: the
+  // rest are kept for a person to look at, with the sender named, so a name
+  // missing from the list is easy to see and add.
+  const senderIds = (await getSettingValue(db, "network.sender_ids"))[device.network_code];
+  if (!fromTheNetwork(msg.from, senderIds)) {
+    const note = `This message came from ${msg.from || "an unnamed sender"}, which is not one of the ${device.network_code} senders we believe (${senderIds || "none set"}). If ${device.network_code} really sends from there, add it under Settings, Networks, who the network's messages come from.`;
+    // Something pretending to be about airtime is worth a person's eyes.
+    // The bank telling us our statement is ready is not.
+    return finish(looksLikeValue(text) ? "unparsed" : "ignored", null, note);
+  }
+
   // A reply to something this phone sent settles that command first.
-  const settled = await confirmFromMessage(db, device.id, msg.body);
+  const settled = await confirmFromMessage(db, device.id, text);
   if (settled) return finish("ignored", null, `Confirmed phone command ${settled.id}: ${settled.kind} to ${settled.number}.`);
   if (!receivingNumber) return finish("unparsed", null, `No active receiving number on ${device.network_code} is known for this phone. Add one under Receiving numbers.`);
   const [patterns, dataPatterns] = await getSettingValues(db, ["network.inbound_pattern", "network.data_inbound_pattern"] as const);
   // A message that names a data size is read as data first, so "1GB" is
   // never taken for one naira.
-  const mentionsData = /\d\s*[GM]B/i.test(msg.body);
-  const parsed = mentionsData ? { problem: "The message names a data size, so it was read as data." } : parseNetworkMessage(msg.body, patterns[device.network_code]);
+  const mentionsData = /\d\s*[GM]B/i.test(text);
+  const parsed = mentionsData ? { problem: "The message names a data size, so it was read as data." } : parseNetworkMessage(text, patterns[device.network_code]);
   let inbound: { senderNumber: string; amountKobo: number; dataMb?: number };
   if ("problem" in parsed) {
     // Not airtime. Perhaps gifted data, which is worth its catalogue price.
-    const data = parseDataMessage(msg.body, dataPatterns[device.network_code]);
+    const data = parseDataMessage(text, dataPatterns[device.network_code]);
     if ("problem" in data) {
       // Most messages a phone gets are neither. Only keep the ones that
       // look like they might be, so a person is not buried.
-      const looksLikeValue = /receiv|credit|airtime|transfer|gift|data|MB|GB/i.test(msg.body);
-      return finish(looksLikeValue ? "unparsed" : "ignored", null, `${parsed.problem} ${data.problem}`);
+      return finish(looksLikeValue(text) ? "unparsed" : "ignored", null, `${parsed.problem} ${data.problem}`);
     }
     const bundle = (await db.query<{ price_kobo: number }>("SELECT price_kobo FROM data_bundles WHERE network_code = $1 AND size_mb = $2 AND giftable AND active ORDER BY price_kobo LIMIT 1", [device.network_code, data.sizeMb])).rows[0];
     if (!bundle) return finish("unparsed", null, `Read as ${data.sizeMb}MB of data from ${data.senderNumber}, but no giftable ${device.network_code} bundle of that size is in the catalogue, so it cannot be valued. Add one under Data bundles.`);

@@ -41,7 +41,7 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicB
   registerBridge(app);
   registerOrders(app);
   registerSettlement(app);
-  registerPublic(app);
+  registerPublic(app, options.secureCookies);
   const paystack = options.paystack ?? paystackFromEnv();
   const publicBaseUrl = options.publicBaseUrl ?? "http://localhost:3000";
   registerBuy(app, { paystack, publicBaseUrl });

@@ -43,9 +43,11 @@ ${options.refreshSeconds ? html`<meta http-equiv="refresh" content="${options.re
   );
 }
 
-// 08031234567 becomes 0803 *** 4567 on any page a link might be shared from.
+// 08031234567 becomes 0803 **** 67 on any page a link might be shared from.
+// Enough for the person who sent it to recognise their own line, not enough
+// for somebody holding the link to work out the number.
 export function mask(number: string): string {
-  return `${number.slice(0, 4)} *** ${number.slice(-4)}`;
+  return `${number.slice(0, 4)} **** ${number.slice(-2)}`;
 }
 
 export async function networkForNumber(db: pg.Pool, number: string): Promise<NetworkCode | undefined> {
@@ -238,7 +240,7 @@ export async function referringAgent(req: Request, db: pg.Pool): Promise<number 
   return (await agentByCode(db, code))?.id;
 }
 
-export function registerPublic(app: App): void {
+export function registerPublic(app: App, secureCookies = false): void {
   app.get("/", async (_req, db) => homePage(db), false);
 
   // An agent's link: remembers the agent for thirty days, then shows the
@@ -248,7 +250,7 @@ export function registerPublic(app: App): void {
     async (req, db) => {
       const agent = (await getSettingValue(db, "agent.enabled")) ? await agentByCode(db, req.query.get("code") ?? "") : undefined;
       if (!agent) return { kind: "redirect", to: "/" };
-      return { kind: "redirect", to: "/", headers: { "set-cookie": cookie(AGENT_COOKIE, agent.code, req.raw.headers["x-forwarded-proto"] === "https", 30 * 86_400) } };
+      return { kind: "redirect", to: "/", headers: { "set-cookie": cookie(AGENT_COOKIE, agent.code, secureCookies, 30 * 86_400) } };
     },
     false,
   );

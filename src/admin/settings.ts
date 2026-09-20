@@ -41,6 +41,7 @@ const SHAPES: Record<SettingKey, Shape> = {
   "agent.min_topup_kobo": "kobo",
   "pool.floor_kobo": "per_network_kobo",
   "network.daily_transfer_cap_kobo": "per_network_kobo",
+  "network.sender_ids": "per_network_text",
   "network.inbound_pattern": "per_network_longtext",
   "network.data_gift_code": "per_network_text",
   "network.sent_pattern": "per_network_longtext",

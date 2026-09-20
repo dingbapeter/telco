@@ -35,13 +35,27 @@ object Sender {
             val id = c.getLong("id")
             if (settings.wasDialled(id)) continue
             val code = c.getString("code").replace("{pin}", settings.pin)
+            // Only a dialling code is ever dialled. Anything else, however
+            // it got here, is refused rather than sent to the network.
+            if (!looksLikeUssd(code)) {
+                settings.markDialled(id)
+                val refused = JSONObject().put("ok", false).put("failure", "This phone refused to dial it: it is not a top-up code.")
+                post(settings.serverUrl + "/bridge/commands/$id/result", settings.token, refused.toString())
+                settings.lastCommand = "Command $id: refused, not a top-up code."
+                continue
+            }
             settings.markDialled(id)
             val result = dial(context, code)
+            // The network often repeats the code it was sent, PIN and all.
+            // The PIN never leaves this phone, so it is taken out of both
+            // the reply we send back and the words shown on this screen.
+            val response = hidePin(result.response, settings.pin)
+            val failure = hidePin(result.failure, settings.pin)
             val payload = JSONObject().put("ok", result.ok)
-            if (result.response != null) payload.put("response", result.response)
-            if (result.failure != null) payload.put("failure", result.failure)
+            if (response != null) payload.put("response", response)
+            if (failure != null) payload.put("failure", failure)
             post(settings.serverUrl + "/bridge/commands/$id/result", settings.token, payload.toString())
-            settings.lastCommand = "Command $id: " + (if (result.ok) "dialled, reply: ${result.response}" else "failed: ${result.failure}")
+            settings.lastCommand = "Command $id: " + (if (result.ok) "dialled, reply: $response" else "failed: $failure")
             done += 1
             // Networks dislike back-to-back USSD sessions.
             Thread.sleep(4000)
@@ -50,6 +64,17 @@ object Sender {
     }
 
     class DialResult(val ok: Boolean, val response: String?, val failure: String?)
+
+    // A top-up code and nothing else. Two stars, or a star and a hash, at
+    // the front is how a phone is told to forward its calls or change its
+    // own settings, and no top-up code looks like that. The server keeps
+    // the same rule, so neither side alone decides what a SIM may dial.
+    fun looksLikeUssd(code: String): Boolean = Regex("^\\*[^*#][0-9*#A-Za-z ]{0,60}#$").matches(code)
+
+    fun hidePin(text: String?, pin: String): String? {
+        if (text == null || pin.isEmpty()) return text
+        return text.replace(pin, "****")
+    }
 
     // A single USSD request and its reply. Menus that need a second step
     // cannot be driven this way; the network's text message settles those.

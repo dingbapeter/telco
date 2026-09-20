@@ -65,6 +65,14 @@ export async function sendingPhoneFor(db: Queryable, network: NetworkCode): Prom
 
 export type QueueInput = { network: NetworkCode; number: string; amountKobo: number; bundle?: Bundle | undefined; purpose: string };
 
+// Starts with one star, ends with a hash, and nothing in between but the
+// characters a top-up code is made of. Two stars, or a star and a hash, at
+// the front is the shape of a code that changes the phone itself.
+export function looksLikeTopUpCode(code: string): boolean {
+  const filled = code.replaceAll("{pin}", "0000");
+  return /^\*(?![*#])[0-9*#A-Za-z ]{1,60}#$/.test(filled);
+}
+
 // Asks the sending phone on a network to send airtime or gift a bundle. The
 // code comes from the settings with the amount and number filled in and the
 // PIN left for the phone.
@@ -76,6 +84,13 @@ export async function queueCommand(db: Queryable, input: QueueInput): Promise<Ph
   if (!template) throw new UserFacingError("no_code", `No ${input.bundle ? "data gifting" : "transfer"} code is set for ${input.network} under Settings, Networks.`);
   const amountNaira = input.amountKobo % 100 === 0 ? String(input.amountKobo / 100) : (input.amountKobo / 100).toFixed(2);
   const code = template.replace("{amount}", amountNaira).replace("{number}", input.number).replace("{size}", input.bundle ? input.bundle.name : "");
+  // A phone is only ever asked to dial a top-up code. A code beginning
+  // with two stars or a star and a hash is how a phone is told to forward
+  // its calls or change its own settings, and no top-up code looks like
+  // that. The phone keeps the same rule, so neither side alone decides it.
+  if (!looksLikeTopUpCode(code)) {
+    throw new UserFacingError("bad_code", `The ${input.network} code does not read as a top-up code once filled in: ${code}. Check it under Settings, Networks.`);
+  }
   const { rows } = await db.query<PhoneCommand>(
     `INSERT INTO phone_commands (device_id, network_code, kind, number, amount_kobo, bundle_id, code, purpose, state)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued') RETURNING *`,

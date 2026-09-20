@@ -38,13 +38,21 @@ class MainActivity : AppCompatActivity() {
         if (settings.token.isNotEmpty()) token.hint = "Token is saved. Type a new one to replace it."
 
         findViewById<Button>(R.id.save).setOnClickListener {
-            settings.serverUrl = url.text.toString()
+            // A new address is a new server. The token and the PIN belong to
+            // the old one and are forgotten, so that someone who types their
+            // own address into this phone gets neither.
+            val movedServer = url.text.toString().trim() != settings.serverUrl
+            settings.serverUrl = url.text.toString().trim()
+            if (movedServer) {
+                settings.token = ""
+                settings.pin = ""
+            }
             if (token.text.isNotEmpty()) settings.token = token.text.toString()
             token.setText("")
             if (!settings.serverUrl.startsWith("https://")) {
                 settings.lastResult = "The server address must start with https://"
             } else {
-                settings.lastResult = "Saved. Connecting."
+                settings.lastResult = if (movedServer) "Saved for a new server. Enter the token and the PIN again." else "Saved. Connecting."
                 Upload.now(this)
                 SenderService.start(this)
             }

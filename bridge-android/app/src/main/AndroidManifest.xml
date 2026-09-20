@@ -40,9 +40,11 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Not exported: the system still delivers the boot message, and no
+             other app on the phone can poke it. -->
         <receiver
             android:name=".BootReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
