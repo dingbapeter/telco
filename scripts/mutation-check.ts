@@ -5,7 +5,11 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
-type Mutation = { name: string; file: string; find: string; replace: string; suite: string; also?: { find: string; replace: string }[] };
+// A mutation edits one file. Where two defences guard the same rule, the
+// second edit can name its own file, so both can be turned off at once and
+// the rule is really put to the test.
+type Edit = { file?: string; find: string; replace: string };
+type Mutation = { name: string; file: string; find: string; replace: string; suite: string; also?: Edit[] };
 
 const MUTATIONS: Mutation[] = [
   { name: "form from another site accepted", file: "src/web/http.ts", find: "if (req.method === \"POST\" && !this.originAllowed(req)) {", replace: "if (false) {", suite: "tests/web.test.ts" },
@@ -18,6 +22,13 @@ const MUTATIONS: Mutation[] = [
   { name: "one address may try every account unslowed", file: "src/throttle.ts", find: "const ADDRESS_FREE_TRIES = 20;", replace: "const ADDRESS_FREE_TRIES = 1_000_000;", suite: "tests/throttle.test.ts" },
   { name: "what the throttle remembers is never forgotten", file: "src/throttle.ts", find: "  for (const [key, b] of buckets) if (b.touched + FORGET_AFTER_MS < now) buckets.delete(key);", replace: "", suite: "tests/throttle.test.ts" },
   { name: "stand in password is not a real one", file: "src/auth.ts", find: "export const DUMMY_HASH = \"scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$\"", replace: "export const DUMMY_HASH = \"none$0$0$0$AAAAAAAAAAAAAAAAAAAAAA==$\"", suite: "tests/throttle.test.ts" },
+  { name: "refund sent by a phone can also be sent by hand", file: "src/transfers.ts", find: "    if (rows[0]?.refund_rail !== \"manual\") {", replace: "    if (false) {", suite: "tests/transfers.test.ts" },
+  { name: "refund taken over after a phone already has it", file: "src/transfers.ts", find: "AND refund_request_id IS NULL AND coalesce(refund_rail, '') <> 'manual'", replace: "AND coalesce(refund_rail, '') <> 'manual'", suite: "tests/transfers.test.ts" },
+  { name: "payouts already on their way ignored", file: "src/transfers.ts", find: "const available = (await balance(db, funding)) - (await committedAgainst(db, funding));", replace: "const available = await balance(db, funding);", suite: "tests/transfers.test.ts" },
+  { name: "repriced bundle throws instead of waiting for a person", file: "src/transfers.ts", find: "      if (err instanceof UserFacingError) return { fee: null, holdReason: \"bundle_repriced\" };", replace: "      if (false) return { fee: null, holdReason: \"bundle_repriced\" };", suite: "tests/data.test.ts" },
+  { name: "overpaid order treated as paid", file: "src/orders.ts", find: "const next: OrderState = short || over ? \"held\" : \"paid\";", replace: "const next: OrderState = short ? \"held\" : \"paid\";", suite: "tests/retail.test.ts" },
+  { name: "one payment may pay two orders (both defences off)", file: "migrations/0010_committed_payouts.sql", find: "CREATE UNIQUE INDEX IF NOT EXISTS orders_payment_reference_idx", replace: "CREATE INDEX IF NOT EXISTS orders_payment_reference_idx", also: [{ file: "src/orders.ts", find: "idempotencyKey: `payment:${p.method}:${p.reference}`", replace: "idempotencyKey: `order:${moved.id}:payment`" }], suite: "tests/retail.test.ts" },
+  { name: "wallet spends money already asked for as a withdrawal", file: "src/agents.ts", find: "  if (have - pending < priceKobo) {", replace: "  if (have < priceKobo) {", suite: "tests/agents.test.ts" },
   { name: "fee floor removed", file: "src/fees.ts", find: "if (fee < rule.floorKobo) fee = rule.floorKobo;", replace: "", suite: "tests/fees.test.ts" },
   { name: "fee ceiling removed", file: "src/fees.ts", find: "if (fee > rule.ceilingKobo) fee = rule.ceilingKobo;", replace: "", suite: "tests/fees.test.ts" },
   { name: "network share rounds to nearest instead of down", file: "src/fees.ts", find: "Math.floor((fee * rule.networkShareBasisPoints) / 10_000)", replace: "Math.round((fee * rule.networkShareBasisPoints) / 10_000)", suite: "tests/fees.test.ts" },
@@ -109,7 +120,7 @@ const MUTATIONS: Mutation[] = [
   { name: "lot expiry ignores the bundle's validity", file: "src/datalots.ts", find: "CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(days => $5) END", replace: "now() + interval '365 days'", suite: "tests/datalots.test.ts" },
   { name: "commission paid twice", file: "src/agents.ts", find: "idempotencyKey: `transfer:${transferId}:commission`,", replace: "idempotencyKey: `transfer:${transferId}:commission:${Date.now()}`,", suite: "tests/agents.test.ts" },
   { name: "commission not paid on completion", file: "src/transfers.ts", find: "  if (moved.agent_id) await bookCommission(db, moved.agent_id, moved.id, moved.reference, moved.platform_share_kobo!);", replace: "", suite: "tests/agents.test.ts" },
-  { name: "wallet purchase allowed beyond the balance", file: "src/agents.ts", find: "if (have < priceKobo) throw new UserFacingError(\"wallet_low\"", replace: "if (false) throw new UserFacingError(\"wallet_low\"", suite: "tests/agents.test.ts" },
+  { name: "wallet purchase allowed beyond the balance", file: "src/agents.ts", find: "  if (have - pending < priceKobo) {", replace: "  if (false) {", suite: "tests/agents.test.ts" },
   { name: "withdrawal allowed beyond the balance", file: "src/agents.ts", find: "if (amountKobo + pending > have) throw new UserFacingError(\"wallet_low\"", replace: "if (false) throw new UserFacingError(\"wallet_low\"", suite: "tests/agents.test.ts" },
   { name: "agent link accepted while agents are off", file: "src/public/pages.ts", find: "  if (!(await getSettingValue(db, \"agent.enabled\"))) return undefined;\n  return (await agentByCode(db, code))?.id;", replace: "  return (await agentByCode(db, code))?.id;", suite: "tests/agents.test.ts" },
   { name: "agent discount not applied", file: "src/agents.ts", find: "return { priceKobo: faceKobo - discountKobo, discountKobo };", replace: "return { priceKobo: faceKobo, discountKobo };", suite: "tests/agents.test.ts" },
@@ -124,13 +135,16 @@ const results: { name: string; suite: string; outcome: "red" | "GREEN" | "did no
 
 for (const m of MUTATIONS) {
   if (only && !m.name.includes(only)) continue;
-  const original = readFileSync(m.file, "utf8");
-  const edits = [{ find: m.find, replace: m.replace }, ...(m.also ?? [])];
-  if (edits.some((e) => !original.includes(e.find))) {
+  const edits: Required<Edit>[] = [{ file: m.file, find: m.find, replace: m.replace }, ...(m.also ?? []).map((e) => ({ file: e.file ?? m.file, find: e.find, replace: e.replace }))];
+  const files = [...new Set(edits.map((e) => e.file))];
+  const originals = new Map(files.map((f) => [f, readFileSync(f, "utf8")]));
+  if (edits.some((e) => !originals.get(e.file)!.includes(e.find))) {
     results.push({ name: m.name, suite: m.suite, outcome: "did not apply" });
     continue;
   }
-  writeFileSync(m.file, edits.reduce((text, e) => text.replace(e.find, e.replace), original));
+  for (const file of files) {
+    writeFileSync(file, edits.filter((e) => e.file === file).reduce((text, e) => text.replace(e.find, e.replace), originals.get(file)!));
+  }
   try {
     const run = spawnSync("scripts/test.sh", [m.suite], { encoding: "utf8", env: process.env });
     const output = run.stdout + run.stderr;
@@ -139,7 +153,7 @@ for (const m of MUTATIONS) {
     results.push({ name: m.name, suite: m.suite, outcome: red ? "red" : "GREEN" });
     process.stdout.write(`${red ? "red  " : "GREEN"}  ${m.name}\n`);
   } finally {
-    writeFileSync(m.file, original);
+    for (const [file, text] of originals) writeFileSync(file, text);
   }
 }
 for (const m of MUTATIONS) {

@@ -9,7 +9,7 @@ import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { applyBasisPoints, assertKobo, formatNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
 import { getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
-import { RETRY_WAIT_MINUTES, type PaidVia } from "./transfers.ts";
+import { committedAgainst, RETRY_WAIT_MINUTES, type PaidVia } from "./transfers.ts";
 
 export type OrderState = "awaiting_payment" | "expired" | "cancelled" | "paid" | "delivering" | "delivered" | "delivery_failed" | "held" | "refunded";
 
@@ -141,24 +141,30 @@ export async function recordPayment(db: Client, actor: string, orderId: number, 
   if (!current) throw new UserFacingError("no_such_order", "There is no order with that reference.");
   if (current.state !== "awaiting_payment" && current.state !== "expired") return { order: current, outcome: "already" };
   assertKobo(p.paidKobo);
+  // Anything that is not the price exactly waits for a person. Too little
+  // cannot buy the airtime; too much would leave money in the buyer's name
+  // with no way back once the order is delivered.
   const short = p.paidKobo < current.price_kobo;
-  const next: OrderState = short ? "held" : "paid";
+  const over = p.paidKobo > current.price_kobo;
+  const next: OrderState = short || over ? "held" : "paid";
   const moved = (await claim(db, current.id, ["awaiting_payment", "expired"], next, {
     payment_method: p.method,
     payment_reference: p.reference,
     paid_kobo: p.paidKobo,
     payment_fee_kobo: p.feeKobo,
     paid_at: new Date(),
-    hold_reason: short ? "underpaid" : null,
+    hold_reason: short ? "underpaid" : over ? "overpaid" : null,
   }))!;
   const postings = [
     { account: p.cashAccount, amountKobo: p.paidKobo - p.feeKobo },
     { account: "owed:buyers", amountKobo: -p.paidKobo },
   ];
   if (p.feeKobo > 0) postings.push({ account: "expense:payment_fees", amountKobo: p.feeKobo });
-  await postJournal(db, { idempotencyKey: `order:${moved.id}:payment`, description: `Payment of ${formatNaira(p.paidKobo)} for ${moved.reference} by ${p.method}`, reference: moved.reference, postings });
-  await recordEvent(db, moved.id, current.state, next, actor, { method: p.method, reference: p.reference, paid_kobo: p.paidKobo, fee_kobo: p.feeKobo, ...(short ? { hold_reason: "underpaid" } : {}) });
-  return { order: moved, outcome: short ? "held" : "paid" };
+  // Keyed on the payment itself, not the order: the same bank narration
+  // typed against two orders must book once, not twice.
+  await postJournal(db, { idempotencyKey: `payment:${p.method}:${p.reference}`, description: `Payment of ${formatNaira(p.paidKobo)} for ${moved.reference} by ${p.method}`, reference: moved.reference, postings });
+  await recordEvent(db, moved.id, current.state, next, actor, { method: p.method, reference: p.reference, paid_kobo: p.paidKobo, fee_kobo: p.feeKobo, ...(short ? { hold_reason: "underpaid" } : over ? { hold_reason: "overpaid" } : {}) });
+  return { order: moved, outcome: short || over ? "held" : "paid" };
 }
 
 export type DeliveryOptions = { fundingAccount?: string; rail?: string; requestId?: string };
@@ -170,13 +176,14 @@ export async function startDelivery(db: Client, actor: string, orderId: number, 
   if (o.state !== "paid" && o.state !== "delivery_failed") return { started: false, state: o.state, reason: `Order is ${o.state.replaceAll("_", " ")}, not waiting for delivery.` };
   const funding = options.fundingAccount ?? (o.bundle_id ? `datapool:${o.network_code}` : `pool:${o.network_code}`);
   await lockAccount(db, funding);
-  const available = await balance(db, funding);
+  // Less whatever is already on its way out of the same account.
+  const available = (await balance(db, funding)) - (await committedAgainst(db, funding));
   if (available < o.face_kobo) {
     const moved = await claim(db, o.id, o.state, "held", { hold_reason: "pool_too_low" });
     if (moved) await recordEvent(db, o.id, o.state, "held", actor, { hold_reason: "pool_too_low", account: funding, available_kobo: available });
     return { started: false, state: "held", reason: `${funding.startsWith("wallet:") ? "The provider wallet" : `The ${o.network_code} pool`} holds ${formatNaira(available)} and this order needs ${formatNaira(o.face_kobo)}. Top it up under Pools, then release the order.` };
   }
-  const moved = await claim(db, o.id, o.state, "delivering", { delivery_attempts: o.delivery_attempts + 1, delivery_rail: options.rail ?? "manual", delivery_request_id: options.requestId ?? null, delivery_next_attempt_at: null });
+  const moved = await claim(db, o.id, o.state, "delivering", { delivery_attempts: o.delivery_attempts + 1, delivery_rail: options.rail ?? "manual", delivery_request_id: options.requestId ?? null, delivery_next_attempt_at: null, delivery_funding_account: funding });
   if (!moved) return { started: false, state: o.state, reason: "Another process took this order first." };
   await recordEvent(db, o.id, o.state, "delivering", actor, { attempt: moved.delivery_attempts, rail: moved.delivery_rail, request_id: moved.delivery_request_id });
   const bundle = o.bundle_id ? await activeBundle(db, o.bundle_id).catch(() => undefined) : undefined;
@@ -195,6 +202,7 @@ export async function completeDelivery(db: Client, actor: string, orderId: numbe
     if (via.chargedKobo + via.commissionKobo !== moved.face_kobo) throw new Error(`Provider figures do not add up for ${moved.reference}: charged ${via.chargedKobo} plus commission ${via.commissionKobo} is not the face value ${moved.face_kobo}.`);
     postings.push({ account: via.account, amountKobo: -via.chargedKobo });
     if (via.commissionKobo > 0) postings.push({ account: "revenue:provider_commission", amountKobo: -via.commissionKobo });
+    if (via.account.startsWith("datapool:")) await consumeLots(db, moved.network_code, via.chargedKobo);
   } else {
     postings.push({ account: moved.bundle_id ? `datapool:${moved.network_code}` : `pool:${moved.network_code}`, amountKobo: -moved.face_kobo });
     if (moved.bundle_id) await consumeLots(db, moved.network_code, moved.face_kobo);

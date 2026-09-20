@@ -211,6 +211,11 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
       `${from} only lets a subscriber transfer ${formatNaira(networkCap)} in a day, so it would refuse this. Send ${formatNaira(networkCap)} or less.`,
     );
   }
+  // One number at a time, or two quotes asked for together would each see
+  // the day's total without the other and both pass the limit. The lock is
+  // held to the end of this transaction and taken on the number itself, so
+  // it never blocks anybody else.
+  await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`sender:${sender}`]);
   const today = await db.query<{ total: number }>(
     `SELECT coalesce(sum(coalesce(received_kobo, requested_kobo)), 0)::bigint AS total FROM transfers
      WHERE sender_number = $1 AND created_at >= ${START_OF_TODAY} AND state NOT IN ('expired', 'refunded')`,
@@ -271,7 +276,17 @@ async function settlement(db: Queryable, t: Transfer, amount: number): Promise<{
     if (amount !== t.requested_kobo) return { fee: null, holdReason: amount < t.requested_kobo ? "amount_below_required" : "amount_above_required" };
     const outBundle = await activeBundle(db, t.out_bundle_id!).catch(() => undefined);
     if (!outBundle) return { fee: null, holdReason: "bundle_withdrawn" };
-    return { fee: settleForBundle(amount, outBundle.price_kobo, await loadFeeRule(db, t.from_network, t.to_network)), holdReason: null };
+    try {
+      return { fee: settleForBundle(amount, outBundle.price_kobo, await loadFeeRule(db, t.from_network, t.to_network)), holdReason: null };
+    } catch (err) {
+      // The bundle was repriced, or the fee was raised, between the quote
+      // and the airtime arriving. The sender's airtime is ours and must be
+      // recorded: it waits for a person rather than throwing, which would
+      // roll back the message that told us about it and leave every other
+      // message behind it stuck.
+      if (err instanceof UserFacingError) return { fee: null, holdReason: "bundle_repriced" };
+      throw err;
+    }
   }
   if (t.in_kind !== "data" && amount < min) return { fee: null, holdReason: "amount_below_minimum" };
   if (amount > max) return { fee: null, holdReason: "amount_above_maximum" };
@@ -440,9 +455,18 @@ export async function startPayout(db: Client, actor: string, transferId: number,
       reason: `Payout of ${formatNaira(payout)} is above the ${formatNaira(autoMax)} threshold and needs an administrator's approval.`,
     };
   }
+  const funding = options.fundingAccount ?? `pool:${t.to_network}`;
+  await lockAccount(db, funding);
+  // Both guardrails are read under this lock, so two payouts starting
+  // together cannot each see a pool or a day's total without the other.
+  //
+  // The day's payouts are counted by when the payout happened, not when the transfer was asked
+  // for: a transfer quoted before midnight and paid after it belongs to the
+  // day it was paid, and would otherwise fall between the two days and
+  // count against neither.
   const paidToday = await db.query<{ total: number }>(
     `SELECT coalesce(sum(payout_kobo), 0)::bigint AS total FROM transfers
-     WHERE to_network = $1 AND state IN ('paying_out', 'completed') AND created_at >= ${START_OF_TODAY}`,
+     WHERE to_network = $1 AND (state = 'paying_out' OR (state = 'completed' AND paid_out_at >= ${START_OF_TODAY}))`,
     [t.to_network],
   );
   const ceiling = ceilings[t.to_network];
@@ -455,9 +479,9 @@ export async function startPayout(db: Client, actor: string, transferId: number,
       reason: `Paying ${formatNaira(payout)} would take today's ${t.to_network} payouts past the ${formatNaira(ceiling)} ceiling. Raise the ceiling in the command centre under Guardrails, or release it tomorrow.`,
     };
   }
-  const funding = options.fundingAccount ?? `pool:${t.to_network}`;
-  await lockAccount(db, funding);
-  const available = await balance(db, funding);
+  // What the account holds, less what is already on its way out of it: a
+  // payout in flight has left the SIM but not yet the ledger.
+  const available = (await balance(db, funding)) - (await committedAgainst(db, funding));
   if (available < payout) {
     const moved = await claim(db, t.id, t.state, "held", { hold_reason: "pool_too_low" });
     if (moved) await recordEvent(db, t.id, t.state, "held", actor, { hold_reason: "pool_too_low", account: funding, available_kobo: available });
@@ -473,6 +497,7 @@ export async function startPayout(db: Client, actor: string, transferId: number,
     payout_rail: options.rail ?? "manual",
     payout_request_id: options.requestId ?? null,
     payout_next_attempt_at: null,
+    payout_funding_account: funding,
   });
   if (!moved) return { started: false, state: t.state, reason: "Another process took this transfer first." };
   await recordEvent(db, t.id, t.state, "paying_out", actor, { attempt: moved.payout_attempts, rail: moved.payout_rail, request_id: moved.payout_request_id });
@@ -481,6 +506,18 @@ export async function startPayout(db: Client, actor: string, transferId: number,
     started: true,
     instruction: { transferId: t.id, reference: t.reference, network: t.to_network, number: t.recipient_number, amountKobo: payout, ...(bundle ? { bundle } : {}) },
   };
+}
+
+// Value already promised out of one account and not yet posted to it:
+// transfers being paid and orders being delivered. Read under the same lock
+// as the balance it is subtracted from.
+export async function committedAgainst(db: Queryable, account: string): Promise<number> {
+  const { rows } = await db.query<{ total: number }>(
+    `SELECT coalesce((SELECT sum(payout_kobo) FROM transfers WHERE state = 'paying_out' AND payout_funding_account = $1), 0)
+          + coalesce((SELECT sum(face_kobo) FROM orders WHERE state = 'delivering' AND delivery_funding_account = $1), 0) AS total`,
+    [account],
+  );
+  return Number(rows[0]!.total);
 }
 
 export async function approvePayout(db: Client, actor: string, transferId: number): Promise<Transfer> {
@@ -509,6 +546,9 @@ export async function completePayout(db: Client, actor: string, transferId: numb
     }
     postings.push({ account: via.account, amountKobo: -via.chargedKobo });
     if (via.commissionKobo > 0) postings.push({ account: "revenue:provider_commission", amountKobo: -via.commissionKobo });
+    // A sending phone gifts a bundle out of our own data pool, so the lots
+    // it came from are spent whether or not a rail reported the send.
+    if (via.account.startsWith("datapool:")) await consumeLots(db, moved.to_network, via.chargedKobo);
   } else {
     // From our own SIM: airtime from its pool, a gifted bundle from its data pool.
     postings.push({ account: moved.out_kind === "data" ? `datapool:${moved.to_network}` : `pool:${moved.to_network}`, amountKobo: -moved.payout_kobo! });
@@ -544,17 +584,43 @@ export async function failPayout(db: Client, actor: string, transferId: number, 
 
 // A person decides to send the airtime back. The rail then sends it on the
 // origin network, and completeRefund books it once the rail confirms.
-export async function startRefund(db: Client, actor: string, transferId: number): Promise<PayoutInstruction> {
+// One refund, one hand. A refund left with no rail belongs to the phones,
+// and the command centre shows no form for it; a refund marked manual
+// belongs to a person, and the phones leave it alone. Nothing may be in
+// both places at once, because both would send real airtime.
+export async function startRefund(db: Client, actor: string, transferId: number): Promise<PayoutInstruction & { byHand: boolean }> {
   const { rows } = await db.query<Transfer>("SELECT * FROM transfers WHERE id = $1 FOR UPDATE", [transferId]);
   const t = rows[0];
   if (!t) throw new UserFacingError("no_such_transfer", "There is no transfer with that id.");
-  const moved = await claim(db, t.id, ["payout_failed", "held", "awaiting_approval"], "refunding");
+  // With automatic payouts off, no phone will ever pick this up, so it is a
+  // person's from the start.
+  const automatic = await getSettingValue(db, "payout.automatic");
+  const moved = await claim(db, t.id, ["payout_failed", "held", "awaiting_approval"], "refunding", automatic ? {} : { refund_rail: "manual" });
   if (!moved) throw new UserFacingError("cannot_refund", `A transfer that is ${t.state.replaceAll("_", " ")} cannot be refunded.`);
   await recordEvent(db, t.id, t.state, "refunding", actor);
-  return { transferId: t.id, reference: t.reference, network: t.from_network, number: t.sender_number, amountKobo: t.received_kobo! };
+  return { transferId: t.id, reference: t.reference, network: t.from_network, number: t.sender_number, amountKobo: t.received_kobo!, byHand: !automatic };
 }
 
-export async function completeRefund(db: Client, actor: string, transferId: number, refundReference: string): Promise<Transfer | undefined> {
+// A person taking a refund off the phones. Only possible while no phone has
+// been given it, so the two can never both be sending.
+export async function refundByHand(db: Client, actor: string, transferId: number): Promise<boolean> {
+  const { rowCount } = await db.query(
+    "UPDATE transfers SET refund_rail = 'manual' WHERE id = $1 AND state = 'refunding' AND refund_request_id IS NULL AND coalesce(refund_rail, '') <> 'manual'",
+    [transferId],
+  );
+  if (rowCount) await recordEvent(db, transferId, "refunding", "refunding", actor, { refund: "taken over by hand" });
+  return (rowCount ?? 0) > 0;
+}
+
+export async function completeRefund(db: Client, actor: string, transferId: number, refundReference: string, options: { byHand?: boolean } = {}): Promise<Transfer | undefined> {
+  // A person may only record a refund that is theirs to send. While a phone
+  // holds it, recording it by hand would mean the sender is paid twice.
+  if (options.byHand) {
+    const { rows } = await db.query<{ refund_rail: string | null }>("SELECT refund_rail FROM transfers WHERE id = $1", [transferId]);
+    if (rows[0]?.refund_rail !== "manual") {
+      throw new UserFacingError("refund_not_yours", "This refund is with a sending phone. Take it over first if you want to send it by hand.");
+    }
+  }
   const moved = await claim(db, transferId, "refunding", "refunded", { refunded_at: new Date(), payout_reference: refundReference });
   if (!moved) return undefined;
   await postJournal(db, {

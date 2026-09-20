@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import { after, before, beforeEach, test } from "node:test";
-import { agentLogin, bookCommission, createAgent, requestWithdrawal, resetAgentLoginLimits, settleWithdrawal, topUpWallet, walletBalance } from "../src/agents.ts";
+import { agentLogin, bookCommission, chargeWallet, createAgent, requestWithdrawal, resetAgentLoginLimits, settleWithdrawal, topUpWallet, walletBalance } from "../src/agents.ts";
 import { buildApp } from "../src/app.ts";
 import { balance } from "../src/ledger.ts";
 import { naira } from "../src/money.ts";
@@ -212,4 +212,17 @@ test("the command centre creates an agent and shows their first password once", 
   const login = await new Browser(base).post("/agent/login", { phone: "08061234567", password }, false);
   assert.equal(login.status, 303);
   assert.doesNotMatch((await b.get("/admin/agents")).text, new RegExp(password));
+});
+
+test("an agent cannot spend money they have already asked to withdraw", async () => {
+  const { agent } = await as("founder", (c) => createAgent(c, { name: "Ada", phone: "08031234599" }));
+  await as("admin", (c) => topUpWallet(c, agent.id, { method: "bank_transfer", reference: "BNK-W1", paidKobo: naira(1_000), feeKobo: 0, cashAccount: "cash:bank" }));
+  await as("agent", (c) => requestWithdrawal(c, agent.id, naira(900), "GTB 0123456789"));
+  await assert.rejects(
+    as("agent", (c) => chargeWallet(c, agent.id, naira(500), "RT-TEST1")),
+    /already asked for as a withdrawal/,
+  );
+  // What is left over and above the withdrawal can still be spent.
+  await as("agent", (c) => chargeWallet(c, agent.id, naira(100), "RT-TEST2"));
+  assert.equal(await walletBalance(pool, agent.id), naira(900));
 });

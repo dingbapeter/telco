@@ -208,6 +208,8 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
           ? "The amount that arrived is outside the limits we can move, so it will be sent back to your line."
           : t.hold_reason === "amount_below_required" || t.hold_reason === "amount_above_required"
             ? `The amount that arrived was not the exact ${formatNaira(t.requested_kobo)} the bundle needs, so it will be sent back to your line.`
+          : t.hold_reason === "bundle_repriced" || t.hold_reason === "bundle_withdrawn"
+            ? "The bundle changed after you were quoted, so a person is checking this one. It will be sent, or sent back to your line."
           : "The airtime could not be delivered on the first try. It will be sent, or sent back to you. Nothing is lost."} Keep this reference: ${t.reference}. This page updates itself.</p>`;
       refresh = 60;
       break;

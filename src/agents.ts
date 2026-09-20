@@ -154,7 +154,18 @@ export async function topUpWallet(db: Queryable, agentId: number, input: { refer
 export async function chargeWallet(db: pg.PoolClient, agentId: number, priceKobo: number, reference: string): Promise<void> {
   await lockAccount(db, walletAccount(agentId));
   const have = await walletBalance(db, agentId);
-  if (have < priceKobo) throw new UserFacingError("wallet_low", `Your wallet holds ${formatNaira(have)} and this costs ${formatNaira(priceKobo)}. Top up first.`);
+  // Money already asked for as a withdrawal is spoken for. Without this an
+  // agent could ask for their balance in cash and then spend it, which
+  // turns a settled withdrawal into one we cannot pay.
+  const pending = await pendingWithdrawals(db, agentId);
+  if (have - pending < priceKobo) {
+    throw new UserFacingError(
+      "wallet_low",
+      pending > 0
+        ? `Your wallet holds ${formatNaira(have)} with ${formatNaira(pending)} already asked for as a withdrawal, so ${formatNaira(have - pending)} is free and this costs ${formatNaira(priceKobo)}. Top up first.`
+        : `Your wallet holds ${formatNaira(have)} and this costs ${formatNaira(priceKobo)}. Top up first.`,
+    );
+  }
   await postJournal(db, {
     idempotencyKey: `order:${reference}:wallet`,
     description: `Agent ${agentId} paid ${formatNaira(priceKobo)} from wallet for ${reference}`,
@@ -193,13 +204,19 @@ export async function agentPrice(db: Queryable, faceKobo: number): Promise<{ pri
 
 export type Withdrawal = { id: number; agent_id: number; amount_kobo: number; bank_details: string; state: "requested" | "paid" | "declined"; requested_at: Date; settled_at: Date | null; settled_by: string | null; reference: string | null; note: string | null };
 
+// Money an agent has asked for and we have not yet sent.
+export async function pendingWithdrawals(db: Queryable, agentId: number): Promise<number> {
+  const { rows } = await db.query<{ total: number }>("SELECT coalesce(sum(amount_kobo), 0)::bigint AS total FROM agent_withdrawals WHERE agent_id = $1 AND state = 'requested'", [agentId]);
+  return Number(rows[0]!.total);
+}
+
 export async function requestWithdrawal(db: pg.PoolClient, agentId: number, amountKobo: number, bankDetails: string): Promise<Withdrawal> {
   assertKobo(amountKobo);
   if (amountKobo <= 0) throw new UserFacingError("bad_amount", "The amount must be more than zero.");
   if (!bankDetails.trim()) throw new UserFacingError("missing_bank", "Say which bank and account the money should go to.");
   await lockAccount(db, walletAccount(agentId));
   const have = await walletBalance(db, agentId);
-  const pending = (await db.query<{ total: number }>("SELECT coalesce(sum(amount_kobo), 0)::bigint AS total FROM agent_withdrawals WHERE agent_id = $1 AND state = 'requested'", [agentId])).rows[0]!.total;
+  const pending = await pendingWithdrawals(db, agentId);
   if (amountKobo + pending > have) throw new UserFacingError("wallet_low", `Your wallet holds ${formatNaira(have)}${pending > 0 ? ` with ${formatNaira(pending)} already requested` : ""}. Ask for ${formatNaira(have - pending)} or less.`);
   return (await db.query<Withdrawal>("INSERT INTO agent_withdrawals (agent_id, amount_kobo, bank_details) VALUES ($1, $2, $3) RETURNING *", [agentId, amountKobo, bankDetails.trim()])).rows[0]!;
 }

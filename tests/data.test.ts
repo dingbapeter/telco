@@ -253,3 +253,29 @@ test("the provider's delivered figures for a bundle are booked like airtime", as
   assert.equal(await balance(pool, "revenue:provider_commission"), naira(5));
   vt.defaultPay = (b) => delivered(b.request_id, b.amount);
 });
+
+test("a bundle repriced after the quote waits for a person, and the message that told us is still recorded", async () => {
+  // The sender is quoted for a bundle out, sends the exact amount, and in
+  // between the catalogue price goes up. The airtime is ours either way, so
+  // it must be recorded and held, never thrown away.
+  const { transfer } = await as("sender", (c) =>
+    quoteTransfer(c, "sender", { fromNetwork: "MTN", toNetwork: "AIRTEL", senderNumber: "08031234567", recipientNumber: "08021234567", outBundleId: airtel1gb.id }),
+  );
+  await as("founder", (c) => upsertBundle(c, { network: "AIRTEL", code: "airtel-1gb", name: "Airtel 1GB", sizeMb: 1024, priceKobo: naira(100_000), providerVariationCode: "airtel-1gb-v" }));
+  const outcome = await as("bridge", (c) =>
+    recordInbound(c, "bridge", {
+      networkCode: "MTN",
+      receivingNumber: "08039990001",
+      senderNumber: "08031234567",
+      amountKobo: transfer.requested_kobo,
+      rawText: `You have received N${transfer.requested_kobo / 100} from 08031234567`,
+      source: "bridge",
+    }),
+  );
+  assert.equal(outcome.outcome, "held");
+  assert.equal("reason" in outcome ? outcome.reason : "", "bundle_repriced");
+  const held = await pool.query("SELECT state, hold_reason FROM transfers WHERE id = $1", [transfer.id]);
+  assert.equal(held.rows[0].state, "held");
+  const notifications = await pool.query("SELECT count(*)::int AS n FROM inbound_notifications");
+  assert.equal(notifications.rows[0].n, 1);
+});

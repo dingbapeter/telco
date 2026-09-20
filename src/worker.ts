@@ -118,6 +118,9 @@ async function runRefunds(db: pg.Pool, rails: Rails, report: CycleReport, now: D
   const due = await db.query<Transfer>("SELECT * FROM transfers WHERE state = 'refunding' AND refund_request_id IS NULL AND coalesce(refund_rail, '') <> 'manual' ORDER BY created_at LIMIT 10");
   for (const t of due.rows) {
     if (!(await rails.phone.available(t.from_network))) {
+      // Hand it to a person rather than leaving it in limbo: the command
+      // centre only shows the refund form once the refund is theirs.
+      await withActor(ACTOR, (c) => c.query("UPDATE transfers SET refund_rail = 'manual', payout_last_error = $2 WHERE id = $1 AND state = 'refunding' AND refund_request_id IS NULL", [t.id, `No phone on ${t.from_network} can send, so this refund is for a person.`]), db);
       report.skipped.push(`${t.reference}: refund waits for a person; no phone on ${t.from_network} can send.`);
       continue;
     }

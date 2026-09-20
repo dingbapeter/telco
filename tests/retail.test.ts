@@ -303,3 +303,22 @@ test("the buyer's pages stay small", async () => {
   }
   void getOrderByReference;
 });
+
+test("paying more than the price waits for a person instead of leaving money with nowhere to go", async () => {
+  const o = await order();
+  const r = await as("admin", (c) => recordPayment(c, "admin", o.id, { method: "bank_transfer", reference: "BNK-OVER", paidKobo: naira(700), feeKobo: 0, cashAccount: "cash:bank" }));
+  assert.equal(r.outcome, "held");
+  const held = await getOrder(pool, o.id);
+  assert.equal(held!.state, "held");
+  assert.equal(held!.hold_reason, "overpaid");
+});
+
+test("one bank narration cannot pay two orders", async () => {
+  const first = await order();
+  const second = await order();
+  await as("admin", (c) => recordPayment(c, "admin", first.id, { method: "bank_transfer", reference: "BNK-SAME", paidKobo: naira(500), feeKobo: 0, cashAccount: "cash:bank" }));
+  await assert.rejects(
+    as("admin", (c) => recordPayment(c, "admin", second.id, { method: "bank_transfer", reference: "BNK-SAME", paidKobo: naira(500), feeKobo: 0, cashAccount: "cash:bank" })),
+  );
+  assert.equal(await balance(pool, "cash:bank"), naira(500));
+});

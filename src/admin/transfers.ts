@@ -6,6 +6,7 @@ import {
   approvePayout,
   completePayout,
   completeRefund,
+  refundByHand,
   failPayout,
   getTransfer,
   getTransferByReference,
@@ -115,13 +116,23 @@ function actions(req: Request, t: Transfer, outBundle?: { name: string } | undef
   if (["payout_failed", "held", "awaiting_approval"].includes(t.state)) {
     out.push(form("refund/start", `Refund ${money(t.received_kobo)} to the sender`, "danger", html`<p>Sends the airtime back to ${t.sender_number} on ${t.from_network}. The next screen tells you what to send.</p>`));
   }
-  if (t.state === "refunding") {
+  if (t.state === "refunding" && t.refund_rail === "manual") {
     out.push(html`<div class="panel">
       <p><strong>Send ${money(t.received_kobo)} of ${t.from_network} airtime back to ${t.sender_number}</strong> from our ${t.from_network} SIM, then record it here.</p>
       <form method="post" action="/admin/transfers/${t.id}/refund/done">${csrf(req)}
         <label for="rref">Reference from the network's confirmation message</label><input id="rref" name="reference" type="text" required>
         <button type="submit">Refund sent</button>
       </form>
+    </div>`);
+  }
+  if (t.state === "refunding" && t.refund_rail !== "manual") {
+    out.push(html`<div class="panel">
+      <p><strong>A sending phone is returning ${money(t.received_kobo)} on ${t.from_network} to ${t.sender_number}.</strong> Leave it alone unless it stops. Do not send it by hand as well: that would pay the sender twice.</p>
+      ${t.refund_request_id
+        ? html`<p class="muted">The phone has been given this refund. If it does not finish, it comes back here for you.</p>`
+        : html`<form method="post" action="/admin/transfers/${t.id}/refund/byhand">${csrf(req)}
+            <button type="submit" class="secondary">Send it by hand instead</button>
+          </form>`}
     </div>`);
   }
   return html`${out}`;
@@ -237,11 +248,19 @@ export function registerTransfers(app: App): void {
   });
   act("refund/start", async (req, db, id) => {
     const r = await withActor(actor(req.admin), (c) => startRefund(c, actor(req.admin), id), db);
-    return notice("ok", `Now send ${money(r.amountKobo)} of ${r.network} airtime back to ${r.number} and record it below.`);
+    return r.byHand
+      ? notice("ok", `Now send ${money(r.amountKobo)} of ${r.network} airtime back to ${r.number} and record it below.`)
+      : notice("ok", `A sending phone will return ${money(r.amountKobo)} of ${r.network} airtime to ${r.number}. Watch it here. Do not send it by hand as well.`);
+  });
+  act("refund/byhand", async (req, db, id) => {
+    const took = await withActor(actor(req.admin), (c) => refundByHand(c, actor(req.admin), id), db);
+    return took
+      ? notice("ok", "This refund is yours now. Send the airtime and record it below.")
+      : notice("problem", "A sending phone already has this refund, so it was not taken over. Watch it here.");
   });
   act("refund/done", async (req, db, id) => {
     const reference = requiredField(req.form, "reference", "The network's reference");
-    const t = await withActor(actor(req.admin), (c) => completeRefund(c, actor(req.admin), id, reference), db);
+    const t = await withActor(actor(req.admin), (c) => completeRefund(c, actor(req.admin), id, reference, { byHand: true }), db);
     return t ? notice("ok", `${t.reference} is refunded. ${money(t.received_kobo)} returned on ${t.from_network}; nothing is owed to the sender.`) : notice("problem", "This transfer was not refunding, so nothing was recorded.");
   });
 }

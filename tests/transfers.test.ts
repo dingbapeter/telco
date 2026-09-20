@@ -14,6 +14,7 @@ import {
   newReference,
   quoteTransfer,
   recordInbound,
+  refundByHand,
   releaseHold,
   startPayout,
   startRefund,
@@ -284,7 +285,9 @@ test("a refund returns the airtime to the sender exactly once and leaves nothing
   await as("worker", (c) => startPayout(c, "worker", transfer.id));
   await as("worker", (c) => failPayout(c, "worker", transfer.id, "recipient number barred"));
   const instruction = await as("founder", (c) => startRefund(c, "founder", transfer.id));
-  assert.deepEqual(instruction, { transferId: transfer.id, reference: transfer.reference, network: "MTN", number: SENDER, amountKobo: naira(500) });
+  // With automatic payouts off, which is how the platform starts, the
+  // refund is a person's from the first moment.
+  assert.deepEqual(instruction, { transferId: transfer.id, reference: transfer.reference, network: "MTN", number: SENDER, amountKobo: naira(500), byHand: true });
   await assert.rejects(as("founder", (c) => startRefund(c, "founder", transfer.id)), /cannot be refunded/);
   const done = await as("worker", (c) => completeRefund(c, "worker", transfer.id, "SIM-1"));
   const again = await as("worker", (c) => completeRefund(c, "worker", transfer.id, "SIM-1"));
@@ -363,4 +366,55 @@ test("a transfer can be found by its reference however it is typed", async () =>
   const { transfer } = await quote();
   const found = await getTransferByReference(pool, ` ${transfer.reference.toLowerCase()} `);
   assert.equal(found!.id, transfer.id);
+});
+
+test("a refund the phones are sending cannot also be sent by hand", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "payout.automatic", true));
+  const { transfer } = await quote();
+  await airtimeArrives();
+  await as("worker", (c) => startPayout(c, "worker", transfer.id));
+  await as("worker", (c) => failPayout(c, "worker", transfer.id, "recipient number barred"));
+  const instruction = await as("founder", (c) => startRefund(c, "founder", transfer.id));
+  assert.equal(instruction.byHand, false);
+  await assert.rejects(
+    as("founder", (c) => completeRefund(c, "founder", transfer.id, "SIM-1", { byHand: true })),
+    /with a sending phone/,
+  );
+  const taken = await as("founder", (c) => refundByHand(c, "founder", transfer.id));
+  assert.equal(taken, true);
+  const done = await as("founder", (c) => completeRefund(c, "founder", transfer.id, "SIM-1", { byHand: true }));
+  assert.equal(done!.state, "refunded");
+});
+
+test("a refund a phone has already been given cannot be taken over", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "payout.automatic", true));
+  const { transfer } = await quote();
+  await airtimeArrives();
+  await as("worker", (c) => startPayout(c, "worker", transfer.id));
+  await as("worker", (c) => failPayout(c, "worker", transfer.id, "recipient number barred"));
+  await as("founder", (c) => startRefund(c, "founder", transfer.id));
+  await pool.query("UPDATE transfers SET refund_request_id = 'refund-1' WHERE id = $1", [transfer.id]);
+  assert.equal(await as("founder", (c) => refundByHand(c, "founder", transfer.id)), false);
+});
+
+test("a second payout cannot spend airtime the first one has already taken", async () => {
+  // Two transfers on a pool holding enough for one of them. The first is
+  // paying out, so its airtime has left the SIM but not yet the ledger.
+  await clean();
+  await addReceivingNumber(OUR_MTN, "MTN");
+  await fundPool("AIRTEL", naira(500));
+  await as("founder", (c) => setSetting(c, "founder", "transfer.sender_daily_max_kobo", naira(10_000)));
+  const first = await quote();
+  await airtimeArrives();
+  const second = await quote(naira(500), { senderNumber: "08031234568" });
+  await airtimeArrives(naira(500), { senderNumber: "08031234568" });
+  const poolBefore = await balance(pool, "pool:AIRTEL");
+  const started = await as("worker", (c) => startPayout(c, "worker", first.transfer.id));
+  assert.equal(started.started, true);
+  const blocked = await as("worker", (c) => startPayout(c, "worker", second.transfer.id));
+  assert.equal(blocked.started, false);
+  assert.match("reason" in blocked ? blocked.reason : "", /pool holds/);
+  assert.equal((await getTransfer(pool, second.transfer.id))!.state, "held");
+  // Starting a payout posts nothing: the pool has not moved.
+  assert.equal(await balance(pool, "pool:AIRTEL"), poolBefore);
 });
