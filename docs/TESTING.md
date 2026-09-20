@@ -297,7 +297,13 @@ reach such a folder anyway. The guard is a second defence, kept for the day
 the first one changes, and it is not in the mutation list because nothing
 observable turns red.
 
-The second is what a test cannot see. A login for an address nobody has an
+What the reading found and what was done about it is in the commits of 20
+September 2026 and, for the founder, in docs/SECURITY.md. The four things
+that need the founder are in docs/WAITING_ON_FOUNDER.md. Every fix that
+could be held by a test is held by one, and every one of those has a
+mutation that turns its suite red.
+
+The second thing to record is what a test cannot see. A login for an address nobody has an
 account for now checks the password against a stand in, so it costs the
 same as a real one and nobody can learn who has an account by timing the
 answer. A test that measured the time would be a test that fails on a busy
