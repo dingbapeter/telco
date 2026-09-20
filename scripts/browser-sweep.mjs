@@ -71,22 +71,43 @@ async function check(page, label) {
     // element is the cause. Deliberately last: it changes the page while it
     // runs and puts it back after each try.
     const culprits = [];
+    const groups = [];
+    const leaks = [];
     if (overflow > 1) {
       const depth = (el) => { let d = 0; for (let p = el.parentElement; p; p = p.parentElement) d += 1; return d; };
-      for (const el of document.querySelectorAll("body *")) {
-        const had = el.getAttribute("style");
-        el.style.display = "none";
+      // Put the elements back through the display property, never by writing
+      // the style attribute: the security policy refuses that, and a refused
+      // restore would leave the page hidden and every later reading wrong.
+      const hide = (els) => {
+        const had = els.map((el) => el.style.display);
+        for (const el of els) el.style.display = "none";
         const left = doc.scrollWidth - doc.clientWidth;
-        if (had === null) el.removeAttribute("style");
-        else el.setAttribute("style", had);
-        if (left <= 1) culprits.push({ what: describe(el), deep: depth(el) });
+        els.forEach((el, i) => { el.style.display = had[i]; });
+        return left;
+      };
+      for (const el of document.querySelectorAll("body *")) {
+        if (hide([el]) <= 1) culprits.push({ what: describe(el), deep: depth(el) });
       }
       culprits.sort((a, b) => b.deep - a.deep);
+      // Two boxes can each push the page out on their own, and then hiding
+      // either one alone changes nothing. Hide whole kinds at once as well.
+      for (const g of [".scroll", "table", ".cards", ".row", "form", ".panel", ".top", "p", "h1, h2", "select", "code"]) {
+        const els = [...document.querySelectorAll(g)];
+        if (els.length > 0 && hide(els) <= 1) groups.push(g);
+      }
+      // A box whose own content sticks out of it, with nothing to catch it.
+      for (const el of document.querySelectorAll("body *")) {
+        if (leaks.length >= 6) break;
+        if (getComputedStyle(el).overflowX !== "visible") continue;
+        if (el.scrollWidth - el.clientWidth > 1) leaks.push(`${describe(el)} holds ${el.scrollWidth}px of content in ${el.clientWidth}px`);
+      }
     }
     return {
       overflow,
       past,
       culprits: culprits.slice(0, 3).map((c) => c.what),
+      groups,
+      leaks,
       bodyWidth: Math.round(document.body.getBoundingClientRect().width),
       viewport: doc.clientWidth,
       smallInputs,
@@ -95,8 +116,10 @@ async function check(page, label) {
     };
   });
   if (r.overflow > 1) {
-    const cause = r.culprits.length > 0 ? `hiding ${r.culprits.join(" or ")} stops it` : "hiding any one element does not stop it";
-    problems.push(`${label}: page scrolls sideways by ${r.overflow}px, body ${r.bodyWidth}px, page area ${r.viewport}px; ${cause}; past the edge: ${r.past.join("; ") || "no element"}`);
+    const cause = r.culprits.length > 0 ? `hiding ${r.culprits.join(" or ")} stops it` : "no single element stops it";
+    const kinds = r.groups.length > 0 ? `hiding every ${r.groups.join(" or every ")} stops it` : "no one kind of element stops it";
+    const leaking = r.leaks.length > 0 ? r.leaks.join("; ") : "no box lets its content out";
+    problems.push(`${label}: page scrolls sideways by ${r.overflow}px, body ${r.bodyWidth}px, page area ${r.viewport}px; ${cause}; ${kinds}; leaking: ${leaking}; past the edge: ${r.past.join("; ") || "no element"}`);
   }
   for (const i of r.smallInputs) problems.push(`${label}: field "${i.name}" is ${i.size}px, iPhones zoom in below 16px`);
   for (const t of r.smallTaps) problems.push(`${label}: button "${t.text}" is ${Math.round(t.w)}x${Math.round(t.h)}px, smaller than a fingertip`);
