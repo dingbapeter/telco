@@ -304,6 +304,34 @@ guarded; and the sweep itself tripped the product's own limit of five
 quotes per address in ten minutes, which is the flood guard doing its job,
 so the flows run on three profiles.
 
+Findings on 20 September 2026, from the two engines the first sweep could
+not run, all fixed. Safari held the account list on the pools page at the
+width of its longest choice, so the row of fields came to 296 pixels inside
+a 254 pixel panel and the page scrolled nine pixels sideways on a 320 pixel
+phone: fields may now shrink below the width their content asks for, and
+the choices are short names with the explanation under the label. The
+public stylesheet's fallback for browsers without flex gap named two
+classes those pages never use, so the header lost its spacing on such a
+browser. Safari and Firefox refuse a screenshot taller than 32767 device
+pixels, which the settings page passes on a phone drawing four and a half
+device pixels per pixel, so a page that tall keeps its first screen.
+
+One message from Safari is ignored by name: before each screenshot the
+sweep tool itself adds an empty style element to settle animations, and the
+product's security policy refuses it. Standing in its place, the sweep now
+fails any page that carries an inline style of its own, which is the thing
+that message would otherwise have warned about.
+
+Finding a sideways scroll took three runs because the first reports said
+only how far the page moved. The sweep now names every element past the
+right edge with the scrolling box that holds it, hides each element and
+then each kind of element until the scrolling stops, and lists any box
+holding more than it shows. Proved by breaking a page on purpose: the
+report named the element. One trap is recorded in the code: the probe must
+put elements back through the display property, because the security policy
+refuses a written style attribute and a refused restore leaves the page
+hidden and every later reading wrong.
+
 Handled in code and held by tests because no emulator shows them: iPhones
 refuse to dial a code with stars and hashes from a link, so the page shows
 a copy button and a plain instruction on iPhones and the dial pad link on
