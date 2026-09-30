@@ -24,8 +24,9 @@ expense line so you can see what draining the pool cost.
 
 Deliveries made through the provider do not touch the pool; they come
 from the provider wallet. So the pool drains only through deliveries made
-from our own SIM, which today means by hand. A phone that can send airtime
-by itself is on the list of things to build (see docs/WAITING_ON_FOUNDER.md).
+from our own SIM, either by a person from the order page or by the sending
+phone dialling the network's own code, which is set per network under
+Settings, Guardrails. See docs/BRIDGE.md.
 
 ## Setting up
 
