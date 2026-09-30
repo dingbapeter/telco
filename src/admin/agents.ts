@@ -76,7 +76,7 @@ async function agentPage(req: Request, db: pg.Pool, id: number, message?: Html, 
   const journal = (await db.query<{ posted_at: Date; description: string; amount_kobo: number }>("SELECT j.posted_at, j.description, -p.amount_kobo AS amount_kobo FROM ledger_postings p JOIN ledger_journals j ON j.id = p.journal_id WHERE p.account_code = $1 ORDER BY j.id DESC LIMIT 50", [`agent:${id}`])).rows;
   const body = html`<h1>${a.name} <span class="state">${a.code}</span></h1>${message ?? ""}
     <dl><dt>Phone</dt><dd>${a.phone}</dd><dt>Email</dt><dd>${a.email ?? ""}</dd><dt>Wallet</dt><dd><strong>${money(have)}</strong></dd>
-      <dt>Free for them to spend</dt><dd>${money(room.freeKobo)}</dd>
+      <dt>Free to spend</dt><dd>${money(room.freeKobo)}</dd>
       ${room.owedKobo > 0 ? html`<dt>Owed to us</dt><dd><strong>${money(room.owedKobo)}</strong>${room.owingSince ? ` since ${when(room.owingSince)}` : ""}</dd>` : ""}
       <dt>Link</dt><dd>/a/${a.code}</dd></dl>
     ${room.creditClosed ? notice("info", `Their credit line is closed at the moment. They are told: ${room.creditClosed}`) : ""}

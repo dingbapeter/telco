@@ -27,8 +27,8 @@ const profiles = [
 ];
 
 const publicPages = ["/", "/buy", "/agent/login", `/t/${process.env.TRANSFER_REF}`, `/o/${process.env.ORDER_REF}`];
-const agentPages = ["/agent", "/agent/buy", "/agent/topup", "/agent/withdraw", "/agent/link"];
-const adminPages = ["/admin", "/admin/transfers", "/admin/orders", "/admin/agents", "/admin/inbound", "/admin/pools", "/admin/numbers", "/admin/bridge", "/admin/bundles", "/admin/settlement", "/admin/settings", "/admin/checklist", "/admin/audit", `/admin/transfers/${process.env.TRANSFER_ID}`];
+const agentPages = ["/agent", "/agent/buy", "/agent/bulk", `/agent/list/${process.env.BATCH_REF}`, "/agent/statement", "/agent/keys", "/agent/topup", "/agent/withdraw", "/agent/link"];
+const adminPages = ["/admin", "/admin/transfers", "/admin/orders", "/admin/agents", "/admin/inbound", "/admin/pools", "/admin/numbers", "/admin/bridge", "/admin/bundles", "/admin/settlement", "/admin/settings", "/admin/checklist", "/admin/audit", `/admin/transfers/${process.env.TRANSFER_ID}`, `/admin/agents/${process.env.AGENT_ID}`];
 
 const problems = [];
 const launchers = { chromium, webkit, firefox };

@@ -5,7 +5,7 @@ at the time it was asked. This file exists so that losing a conversation does
 not lose the decisions. When a decision is made, move it to the "Decided"
 section at the bottom with the date and the answer. Never delete a line.
 
-Last updated: 20 September 2026, after the security reading.
+Last updated: 30 September 2026, after building what a POS agent needs.
 
 ## Needed before the core can be built
 
@@ -239,6 +239,40 @@ things need you, and they are all part of the one deployment above.
    number and it becomes a setting; my recommendation is to leave it until
    you have real staff, because signing yourself out every day while you
    are the only user is a cost with no gain.
+
+### 21. The rate card for agents
+
+An agent's discount and their share of our fee can now be set per agent,
+with the rate in Settings as the default for everyone else. Nothing is
+blocked: the defaults, 2 percent off purchases and 20 percent of our fee,
+stand until you change them. **Needed from you, when you start signing
+shops:** the rate card you will offer, and at what monthly volume each step
+applies. **Recommendation:** three steps, for example 2 percent at any
+volume, 3 percent above two hundred thousand naira a month and 4 percent
+above a million, reviewed monthly from the statements the product now
+produces. Set each agent's own rate by hand on their page after you have
+seen a month of their figures, rather than promising a step in advance.
+
+### 22. Credit for agents
+
+Built and switched off. Three numbers are yours, under Settings, Agents:
+whether credit is on at all, the largest line one agent may be given, and
+how many days an agent may stay owing before their line closes itself.
+**Recommendation:** leave credit off until launch has settled. Then turn it
+on with a small ceiling, for example twenty thousand naira, seven days, and
+give a line only to a shop with three months of steady top-ups behind them.
+Every naira lent is money we have already paid the networks for and cannot
+get back if the shop walks away, so treat a line as a loan, not a
+discount. The Agents page shows what every agent owes and the total at
+risk.
+
+### 23. The interface for an agent's own software
+
+Built and switched off. See docs/AGENT_API.md. **Needed from you:** the
+decision to open it, and to whom. **Recommendation:** open it for a shop
+only after they have bought through the pages for a month, so the first
+integration is with somebody whose volume you already know. The switch and
+the requests a key may make each minute are in Settings, Agents.
 
 ## Decided
 

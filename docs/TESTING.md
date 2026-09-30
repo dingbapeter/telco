@@ -264,6 +264,8 @@ the portal and command centre pages. Checked on 18 September 2026.
 | A wallet refund sent to the bank instead of the wallet | Red |
 | An online top-up credited twice | Red |
 | A paused agent able to log in | Red |
+| Money already asked for as a withdrawal spent again | Red |
+| An agent's top-up reference made from their row number and the time | Red |
 
 ### Two defences on purpose
 
@@ -279,6 +281,81 @@ hash and reports a duplicate, and the database has a unique index on the
 hash. The mutation that makes the application process a duplicate is caught
 by the pool balance staying the same, not by an error, because the unique
 index still stops the second row.
+
+## Agent shop suite (`tests/agentshop.test.ts`)
+
+Drives what a shop needs beyond a wallet: a rate of their own, buying for
+many customers in one go, the statement, and credit lines. Checked on
+30 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| An agent's own rate ignored in favour of the one in Settings | Red |
+| An agent's own share of our fee ignored | Red |
+| A rate outside the allowed range accepted | Red |
+| A credit line given above the ceiling | Red |
+| A closed credit line still lent against | Red |
+| Credit switched off for everyone but still lent against | Red |
+| An agent owing longer than allowed still lent against | Red |
+| How long an agent has owed read from the whole ledger instead of the current run | Red |
+| A credit line taken out in cash as a withdrawal | Red |
+| A bundle size that means two bundles quietly picking one | Red |
+| A bundle name read as an amount of money | Red |
+| A line with no network and a prefix we do not know bought anyway | Red |
+| The same list bought twice, with both defences off | Red |
+| A running balance that starts again at every line | Red |
+| A spreadsheet formula written into a statement as it stands | Red |
+| A date that is not a real day accepted | Red |
+| An agent's second wallet purchase colliding with their first | Red |
+
+That last one was a real bug, found by this suite rather than by a
+mutation. Every wallet purchase was recorded against the payment reference
+`wallet:<agent id>`, and the unique index that stops one payment paying two
+orders meant an agent's second purchase ever would have failed with a raw
+database error. Nobody had bought twice from one wallet in a test before
+the bulk work did it four times in a row. The order's own reference is now
+part of the payment reference, and the mutation above holds it.
+
+### Two defences on purpose
+
+Buying the same list twice is stopped twice: the code takes the batch row
+with `ON CONFLICT DO NOTHING` and hands back the list that already exists,
+and the reference column is unique in the database. The mutation has to
+turn off both to go red, which is why it is written with an `also` entry.
+
+A credit line being taken out in cash is also refused twice: a plain
+message when the wallet is at or below zero, and the older rule that a
+withdrawal may not exceed the wallet's own balance. Turning off the message
+leaves the money safe but the words poor, which the test catches on the
+words.
+
+## Agent interface suite (`tests/agentapi.test.ts`)
+
+Drives the interface an agent's own till or POS software talks to: keys,
+the switch, the rate limit, quotes, purchases, lists and the statement.
+Checked on 30 September 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| An agent's key kept in clear instead of as a fingerprint | Red |
+| A revoked key still working | Red |
+| One agent revoking another agent's key | Red |
+| The switch on the interface ignored | Red |
+| A key allowed to ask as often as it likes | Red |
+| An amount sent in kobo taken as kobo | Red |
+| A purchase allowed without a reference of the shop's own | Red |
+| The same purchase bought twice, with both defences off | Red |
+| One shop reading another shop's purchase | Red |
+
+### Two defences on purpose
+
+A repeated purchase is stopped twice: the code looks for the shop's
+reference before buying, and the database has a unique index on the agent
+and that reference, which catches two requests arriving in the same
+instant. The mutation turns off both. With only the index off, the code
+still answers correctly; with only the lookup off, the index raises the
+violation and the code answers with the order the winner made. Do not
+remove either.
 
 ## Security review (20 September 2026)
 
@@ -320,7 +397,9 @@ iPhone, iPad and Mac; and Firefox. At eight sizes: iPhone SE, iPhone 13,
 Pixel 5, Galaxy S9+ with touch, iPad, a laptop, a desktop, and a phone with
 script switched off, which is how Opera Mini's extreme mode and a blocked
 script leave a page. On each, a sender gets a quote choosing the networks
-by hand and a buyer places an order. It fails the build on a page that
+by hand and a buyer places an order. The seeded database holds an agent
+with a rate of their own, a credit line, a key and a bought list, so the
+shop's pages have real figures on them rather than empty tables. It fails the build on a page that
 scrolls sideways, a text field under 16 pixels (iPhones zoom in), a button
 smaller than a fingertip, or any error the browser reports. Screenshots
 are kept with each run as `screenshots-<engine>`. By hand: `npm run
@@ -346,6 +425,18 @@ classes those pages never use, so the header lost its spacing on such a
 browser. Safari and Firefox refuse a screenshot taller than 32767 device
 pixels, which the settings page passes on a phone drawing four and a half
 device pixels per pixel, so a page that tall keeps its first screen.
+
+Findings on 30 September 2026, when the shop's new pages and the agent's
+own page in the command centre were added to the sweep, all fixed. The
+revoke button beside a key was 42 pixels tall, two short of a fingertip,
+because the agent pages had their own small button rule and no minimum
+height. The two date fields on an agent's page were left at the browser's
+default 13 pixels, because the command centre's stylesheet named every kind
+of text field except a date. And an agent's page scrolled seven pixels
+sideways on a 320 pixel phone: the description list puts the term and its
+value side by side, and a long term with a long value came to 311 pixels
+inside 288. Terms and values now stack under 26 rems, which fixes the same
+fault on every other page that uses one.
 
 One message from Safari is ignored by name: before each screenshot the
 sweep tool itself adds an empty style element to settle animations, and the

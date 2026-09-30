@@ -8,7 +8,8 @@ textarea, code { font-family: ui-monospace, Menlo, Consolas, monospace; overflow
 .row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .row > * { flex: 1 1 10rem; min-width: 0; }
 .inline { display: inline; }
-.inline button { width: auto; margin: 0; padding: 0.45rem 0.8rem; }
+/* min-height keeps a revoke button a fingertip tall, as in the command centre. */
+.inline button { width: auto; margin: 0; padding: 0.45rem 0.8rem; min-height: 44px; }
 
 @supports not (gap: 1rem) {
   .row > * { margin-right: 0.6rem; }

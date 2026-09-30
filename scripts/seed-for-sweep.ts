@@ -1,8 +1,10 @@
 // Puts enough real data in the test database for every page to have
 // something on it, and prints the logins the sweep needs as shell exports.
-import { createAgent, topUpWallet } from "../src/agents.ts";
+import { createApiKey } from "../src/agentkeys.ts";
+import { createAgent, setAgentTerms, topUpWallet } from "../src/agents.ts";
 import { createAdmin } from "../src/auth.ts";
 import { createDevice } from "../src/bridge.ts";
+import { buyInBulk } from "../src/bulkorders.ts";
 import { upsertBundle } from "../src/bundles.ts";
 import { closePool, withActor } from "../src/db.ts";
 import { postJournal } from "../src/ledger.ts";
@@ -17,6 +19,9 @@ const out = await withActor("seed", async (c) => {
   await createAdmin(c, ADMIN);
   await setSetting(c, "seed", "retail.enabled", true);
   await setSetting(c, "seed", "agent.enabled", true);
+  await setSetting(c, "seed", "agent.api_enabled", true);
+  await setSetting(c, "seed", "agent.credit_enabled", true);
+  await setSetting(c, "seed", "agent.credit_max_kobo", 1_000_000);
   await setSetting(c, "seed", "retail.bank_name", "Example Bank");
   await setSetting(c, "seed", "retail.bank_account_number", "0123456789");
   await setSetting(c, "seed", "retail.bank_account_name", "Telco Ltd");
@@ -28,11 +33,14 @@ const out = await withActor("seed", async (c) => {
   await createDevice(c, "MTN phone", "MTN");
   const { agent } = await createAgent(c, AGENT);
   await topUpWallet(c, agent.id, { reference: "seed", paidKobo: 250_000, feeKobo: 0, cashAccount: "cash:bank", method: "bank_transfer" });
+  await setAgentTerms(c, agent.id, { discountBasisPoints: 300, commissionBasisPoints: null, creditLimitKobo: 500_000 });
+  await createApiKey(c, agent.id, "Till at the front counter", "seed");
+  const batch = await buyInBulk(c, agent, "seed", { reference: "BK-SEED2345", text: "08031234567 500\n08021234567 airtel 200" });
   const { transfer } = await quoteTransfer(c, "seed", { fromNetwork: "MTN", toNetwork: "AIRTEL", senderNumber: "08031234567", recipientNumber: "08021234567", amountKobo: 50_000 });
   await recordInbound(c, "seed", { networkCode: "MTN", receivingNumber: "08039990001", senderNumber: "08031234567", amountKobo: 50_000, rawText: "You have received N500 from 08031234567", source: "manual" });
   const { transfer: waiting } = await quoteTransfer(c, "seed", { fromNetwork: "MTN", toNetwork: "AIRTEL", senderNumber: "08031234568", recipientNumber: "08021234567", amountKobo: 100_000 });
   const order = await createOrder(c, "seed", { network: "AIRTEL", recipientNumber: "08021234567", faceKobo: 50_000 });
-  return { transferId: transfer.id, transferRef: waiting.reference, orderRef: order.reference };
+  return { transferId: transfer.id, transferRef: waiting.reference, orderRef: order.reference, agentId: agent.id, batchRef: batch.batch.reference };
 });
 await closePool();
-console.log(`export TRANSFER_ID=${out.transferId} TRANSFER_REF=${out.transferRef} ORDER_REF=${out.orderRef} ADMIN_EMAIL=${ADMIN.email} ADMIN_PASSWORD='${ADMIN.password}' AGENT_PHONE=${AGENT.phone} AGENT_PASSWORD='${AGENT.password}'`);
+console.log(`export TRANSFER_ID=${out.transferId} TRANSFER_REF=${out.transferRef} ORDER_REF=${out.orderRef} AGENT_ID=${out.agentId} BATCH_REF=${out.batchRef} ADMIN_EMAIL=${ADMIN.email} ADMIN_PASSWORD='${ADMIN.password}' AGENT_PHONE=${AGENT.phone} AGENT_PASSWORD='${AGENT.password}'`);

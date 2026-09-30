@@ -53,7 +53,7 @@ async function ask(path: string, options: { method?: string; body?: unknown; key
   const res = await fetch(base + path, {
     method: options.method ?? (options.body ? "POST" : "GET"),
     headers: { ...(key ? { authorization: `Bearer ${key}` } : {}), ...(options.body ? { "content-type": "application/json" } : {}) },
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
   });
   return { status: res.status, body: await res.json() };
 }

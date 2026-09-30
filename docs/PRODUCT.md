@@ -175,6 +175,13 @@ pad, which needs an aggregator and a network agreement; and text message
 confirmations to the sender, which the bridge phones can send on each
 network's own SIM once the app is allowed to send.
 
+Which code a person dials, and who makes each kind of code, is set out in
+docs/CODES.md. The short version: the airtime transfer codes belong to the
+networks and we only hold each one as a template with the PIN left for the
+phone; our references and agent codes are made here; a buyer paying us by
+USSD is using their own bank's code through Paystack; and a Telco short
+code waits on an aggregator contract, not on software.
+
 ## Who uses it
 
 - **The sender** has airtime on network A and wants airtime on network B, for
@@ -183,7 +190,10 @@ network's own SIM once the app is allowed to send.
 - **The recipient** receives airtime. They need nothing.
 - **An agent** holds a prepaid wallet, buys for customers from it at a
   discount, and earns a share of our fee on the transfers their link brings
-  in. See docs/AGENTS.md.
+  in. A shop can be given a rate of its own and a credit line, can buy for
+  a whole list of customers in one go, can download a statement, and can
+  buy from its own till software with a key it makes itself. See
+  docs/AGENTS.md and docs/AGENT_API.md.
 - **The founder** runs everything from the command centre.
 
 ## The order of building
