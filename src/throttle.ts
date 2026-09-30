@@ -62,3 +62,34 @@ export function resetLoginThrottle(): void {
 export function throttleSize(): number {
   return buckets.size;
 }
+
+// A key belonging to an agent's own software gets a plain count of requests
+// a minute. It is not a security measure like the one above; it is there so
+// one misbehaving till cannot take the service down for every other shop.
+type Window = { count: number; startedAt: number };
+const windows = new Map<string, Window>();
+
+export type RateVerdict = { ok: true } | { ok: false; waitSeconds: number };
+
+export function rateCheck(key: string, perMinute: number, now = Date.now()): RateVerdict {
+  // Windows nobody has used for a minute are forgotten, so a run of keys
+  // that no longer exist cannot grow this without end.
+  for (const [k, w] of windows) if (w.startedAt + 60_000 <= now) windows.delete(k);
+  const w = windows.get(key) ?? { count: 0, startedAt: now };
+  if (w.startedAt + 60_000 <= now) {
+    w.count = 0;
+    w.startedAt = now;
+  }
+  w.count += 1;
+  windows.set(key, w);
+  if (w.count <= perMinute) return { ok: true };
+  return { ok: false, waitSeconds: Math.max(1, Math.ceil((w.startedAt + 60_000 - now) / 1000)) };
+}
+
+export function resetRateLimits(): void {
+  windows.clear();
+}
+
+export function rateWindowCount(): number {
+  return windows.size;
+}

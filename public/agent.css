@@ -1,0 +1,15 @@
+/* The agent's own pages, loaded only by them. A sender on a weak
+   connection never pays for the layout of a shop's list and statement.
+   Same palette as public.css: ink #1b1b1b, muted #5a5a5a, line #d9d9d9. */
+input, select, textarea { width: 100%; max-width: 100%; min-width: 0; padding: 0.7rem; font: inherit; border: 1px solid #999; border-radius: 4px; background: #fff; }
+/* A list of numbers lines up when every digit is one width. */
+textarea, code { font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+/* Two fields side by side where there is room, stacked on a phone. */
+.row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.row > * { flex: 1 1 10rem; min-width: 0; }
+.inline { display: inline; }
+.inline button { width: auto; margin: 0; padding: 0.45rem 0.8rem; }
+
+@supports not (gap: 1rem) {
+  .row > * { margin-right: 0.6rem; }
+}

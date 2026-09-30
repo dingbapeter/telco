@@ -13,6 +13,7 @@ import { registerSettlement } from "./admin/settlement.ts";
 import { registerPools } from "./admin/pools.ts";
 import { registerSettings } from "./admin/settings.ts";
 import { registerTransfers } from "./admin/transfers.ts";
+import { registerAgentApi } from "./agent/api.ts";
 import { registerAgentPortal } from "./agent/portal.ts";
 import { paystackFromEnv, type PaystackProvider } from "./payments/paystack.ts";
 import { registerBuy } from "./public/buy.ts";
@@ -47,5 +48,6 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicB
   registerBuy(app, { paystack, publicBaseUrl });
   registerAgentsAdmin(app);
   registerAgentPortal(app, { paystack, publicBaseUrl, secureCookies: options.secureCookies });
+  registerAgentApi(app);
   return app;
 }

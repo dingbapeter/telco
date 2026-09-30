@@ -43,6 +43,9 @@ export type Order = {
   expires_at: Date;
   bundle_id: number | null;
   agent_id: number | null;
+  batch_id: number | null;
+  client_reference: string | null;
+  delivery_funding_account: string | null;
 };
 
 type Client = pg.PoolClient;
@@ -95,6 +98,11 @@ export type OrderInput = {
   // The agent who brought the buyer, or who is buying from their wallet.
   agentId?: number | undefined;
   fromWallet?: boolean | undefined;
+  // Many numbers bought in one go belong to a batch.
+  batchId?: number | undefined;
+  // The reference the agent's own software gave this purchase. Unique per
+  // agent, so a till that asks twice gets the same order back.
+  clientReference?: string | undefined;
 };
 
 export async function createOrder(db: Client, actor: string, input: OrderInput): Promise<Order> {
@@ -112,21 +120,28 @@ export async function createOrder(db: Client, actor: string, input: OrderInput):
   // A bundle is sold at its catalogue price; the discount is for airtime.
   // An agent buying from their wallet gets the agent's discount instead.
   const q = input.fromWallet && input.agentId
-    ? { faceKobo: face, ...(await agentPrice(db, face)) }
+    ? { faceKobo: face, ...(await agentPrice(db, face, input.agentId)) }
     : bundle ? { faceKobo: face, discountKobo: 0, priceKobo: face } : priceFor(face, discounts[network as NetworkCode]);
   const email = input.email?.trim() || null;
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new UserFacingError("bad_email", "That does not look like an email address. Leave it empty if you prefer.");
   const { rows } = await db.query<Order>(
-    `INSERT INTO orders (reference, state, network_code, recipient_number, buyer_email, face_kobo, discount_kobo, price_kobo, expires_at, bundle_id, agent_id)
-     VALUES ($1, 'awaiting_payment', $2, $3, $4, $5, $6, $7, now() + make_interval(mins => $8), $9, $10) RETURNING *`,
-    [newOrderReference(), network, recipient, email, q.faceKobo, q.discountKobo, q.priceKobo, windowMinutes, bundle?.id ?? null, input.agentId ?? null],
-  );
+    `INSERT INTO orders (reference, state, network_code, recipient_number, buyer_email, face_kobo, discount_kobo, price_kobo, expires_at, bundle_id, agent_id, batch_id, client_reference)
+     VALUES ($1, 'awaiting_payment', $2, $3, $4, $5, $6, $7, now() + make_interval(mins => $8), $9, $10, $11, $12) RETURNING *`,
+    [newOrderReference(), network, recipient, email, q.faceKobo, q.discountKobo, q.priceKobo, windowMinutes, bundle?.id ?? null, input.agentId ?? null, input.batchId ?? null, input.clientReference ?? null],
+  ).catch((err: { code?: string; constraint?: string }) => {
+    // The agent's software asked twice with the same reference of its own.
+    if (err.code === "23505" && err.constraint === "orders_agent_client_reference_idx") throw new UserFacingError("duplicate_client_reference", "A purchase with that reference of yours already exists.");
+    throw err;
+  });
   let order = rows[0]!;
   await recordEvent(db, order.id, null, "awaiting_payment", actor, { face_kobo: face, price_kobo: q.priceKobo, agent_id: input.agentId ?? null });
   if (input.fromWallet && input.agentId) {
     // Paid at once from the wallet; delivery follows like any paid order.
     await chargeWallet(db, input.agentId, q.priceKobo, order.reference);
-    order = (await claim(db, order.id, "awaiting_payment", "paid", { payment_method: "wallet", payment_reference: `wallet:${input.agentId}`, paid_kobo: q.priceKobo, payment_fee_kobo: 0, paid_at: new Date() }))!;
+    // The order's own reference is in the payment reference because one
+    // payment may only pay one order, and an agent's second purchase would
+    // otherwise collide with their first.
+    order = (await claim(db, order.id, "awaiting_payment", "paid", { payment_method: "wallet", payment_reference: `wallet:${input.agentId}:${order.reference}`, paid_kobo: q.priceKobo, payment_fee_kobo: 0, paid_at: new Date() }))!;
     await recordEvent(db, order.id, "awaiting_payment", "paid", actor, { method: "wallet", paid_kobo: q.priceKobo });
   }
   return order;

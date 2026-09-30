@@ -33,6 +33,12 @@ export class Browser {
     this.base = base;
   }
 
+  // A download is fetched raw rather than through get(), so the test needs
+  // the cookies this browser is holding.
+  cookieHeader(): string {
+    return this.header();
+  }
+
   private header(): string {
     return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
   }

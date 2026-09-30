@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { agentByCode } from "../agents.ts";
+import type { Queryable } from "../db.ts";
 import { describeBundle, getBundle, listBundles, type Bundle } from "../bundles.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
@@ -19,7 +20,7 @@ const lagosTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", h
 // is a few kilobytes of HTML and one cached stylesheet. No script is needed
 // for anything; the one small script only fills in the network from the
 // number as a convenience.
-export function shell(title: string, body: Html, options: { refreshSeconds?: number } = {}): string {
+export function shell(title: string, body: Html, options: { refreshSeconds?: number; stylesheet?: string } = {}): string {
   return (
     "<!doctype html>" +
     html`<html lang="en-NG">
@@ -30,6 +31,7 @@ ${options.refreshSeconds ? html`<meta http-equiv="refresh" content="${options.re
 <title>${title} | Telco</title>
 <meta name="theme-color" content="#0b5d4a">
 <link rel="stylesheet" href="/static/public.css">
+${options.stylesheet ? html`<link rel="stylesheet" href="${options.stylesheet}">` : ""}
 <link rel="manifest" href="/static/manifest.json">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
@@ -50,7 +52,7 @@ export function mask(number: string): string {
   return `${number.slice(0, 4)} **** ${number.slice(-2)}`;
 }
 
-export async function networkForNumber(db: pg.Pool, number: string): Promise<NetworkCode | undefined> {
+export async function networkForNumber(db: Queryable, number: string): Promise<NetworkCode | undefined> {
   const local = normaliseNigerianNumber(number);
   if (!local) return undefined;
   const { rows } = await db.query<{ network_code: NetworkCode }>("SELECT network_code FROM network_prefixes WHERE prefix = $1", [prefixOf(local)]);

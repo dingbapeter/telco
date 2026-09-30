@@ -24,7 +24,7 @@ export type Request = {
 export type Response =
   | { kind: "html"; status?: number; body: string; headers?: Record<string, string> }
   | { kind: "redirect"; to: string; headers?: Record<string, string> }
-  | { kind: "text"; status?: number; body: string; contentType?: string }
+  | { kind: "text"; status?: number; body: string; contentType?: string; headers?: Record<string, string> }
   | { kind: "json"; status?: number; body: unknown };
 
 export type Handler = (req: Request, db: pg.Pool) => Promise<Response>;
@@ -245,7 +245,7 @@ export function send(res: ServerResponse, r: Response): void {
     return;
   }
   if (r.kind === "text") {
-    res.writeHead(r.status ?? 200, { "content-type": r.contentType ?? "text/plain; charset=utf-8", ...SECURITY_HEADERS });
+    res.writeHead(r.status ?? 200, { "content-type": r.contentType ?? "text/plain; charset=utf-8", ...SECURITY_HEADERS, ...(r.headers ?? {}) });
     res.end(r.body);
     return;
   }
