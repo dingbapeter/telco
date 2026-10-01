@@ -167,7 +167,11 @@ mobile data that may be slow, expensive or both. So:
   page says where the PIN goes and that we never ask for it.
 - The status page updates itself with a plain page refresh, which works in
   every browser and costs a few kilobytes a time.
-- Numbers on the status page are masked, because the link may be shared.
+- Numbers on the status page are masked, because the link may be shared. The
+  one exception is the number the airtime is going to, shown in full while
+  the sender has not dialled yet: a mistyped digit there sends airtime to a
+  stranger and cannot be undone, so the sender has to be able to read it
+  back. It is masked again the moment the value lands.
 
 Two channels are designed for and not yet built: a USSD short code of our
 own, so a sender with no data at all can start a transfer from the dial

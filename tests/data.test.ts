@@ -212,11 +212,11 @@ test("the sender's page offers bundles and shows the gift code for a bundle sent
   const text = (await b.get(r.location!)).text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   assert.match(text, /Now gift the bundle MTN 1GB, 30 days to 08039990001/);
   assert.match(text, /\*131\*08039990001\*MTN 1GB, 30 days#/);
-  assert.match(text, /The recipient gets N576 of airtime on Airtel/);
+  assert.match(text, /We will send N576 of airtime to 08021234567 on Airtel/);
   const out = await b.post("/quote", { sender: "08031234567", from: "MTN", recipient: "08021234567", to: "AIRTEL", amount: "", send: "", receive: String(airtel1gb.id) }, false);
   const text2 = (await b.get(out.location!)).text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   assert.match(text2, /Now send N521 of MTN airtime/);
-  assert.match(text2, /The recipient gets the bundle Airtel 1GB, 30 days on Airtel/);
+  assert.match(text2, /We will send the bundle Airtel 1GB, 30 days to 08021234567 on Airtel/);
   const wrongNet = await b.post("/quote", { sender: "08031234567", from: "MTN", recipient: "08021234567", to: "GLO", amount: "", send: "", receive: String(airtel1gb.id) }, false);
   assert.match(problems(wrongNet.text).join(" "), /for AIRTEL, not GLO/);
 });

@@ -50,7 +50,7 @@ test("a quote sends the sender to a page that says exactly what to dial, to whic
   assert.match(text, /send N500 of MTN airtime to 08039990001/);
   assert.match(text, /\*321\*PIN\*500\*08039990001#/);
   assert.match(text, /Put your MTN transfer PIN where it says PIN/);
-  assert.match(text, /recipient gets N480 of airtime on Airtel/);
+  assert.match(text, /We will send N480 of airtime to 08021234567 on Airtel/);
   assert.match(page.text, /http-equiv="refresh" content="20"/);
   assert.match(text, /Reference TX-/);
 });
@@ -77,16 +77,24 @@ test("every page carries the home-screen icons and manifest for both platforms, 
   }
 });
 
-test("the sender's own numbers are never shown in full on a page whose link might be shared", async () => {
+test("numbers are masked on a page whose link might be shared, except the one the sender must check before they dial", async () => {
   // Four digits at the end would leave only a thousand numbers to try for
   // anyone holding the link, so only two are shown.
   assert.equal(mask("08031234567"), "0803 **** 67");
   const b = new Browser(base);
   const r = await quote(b);
   const page = await b.get(r.location!);
-  assert.doesNotMatch(page.text, /08031234567/);
-  assert.doesNotMatch(page.text, /08021234567/);
+  assert.doesNotMatch(page.text, /08031234567/, "the sender's own line is masked, and they know their own number anyway");
   assert.match(page.text, /0803 \*\*\*\* 67/);
+  // The recipient is shown in full while nothing has moved, because a
+  // mistyped digit here sends airtime to a stranger and cannot be undone.
+  assert.match(page.text, /We will send N480 of airtime to <strong>08021234567<\/strong> on Airtel/);
+  assert.match(page.text, /Check that number before you dial/);
+  // Once the airtime has landed, it is masked like everything else.
+  await as("bridge", (c) => recordInbound(c, "bridge", { networkCode: "MTN", receivingNumber: "08039990001", senderNumber: "08031234567", amountKobo: naira(500), rawText: "received N500 from 08031234567", source: "manual" }));
+  const after = await b.get(r.location!);
+  assert.doesNotMatch(after.text, /08021234567/);
+  assert.match(after.text, /0802 \*\*\*\* 67/);
 });
 
 test("a mistake is shown on the form with what was typed kept, and nothing is created", async () => {

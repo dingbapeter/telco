@@ -206,8 +206,14 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
           ? notice("problem", html`The time to send has passed. If you already sent the airtime, wait a few minutes and reload this page; it will still be matched. If not, <a href="/">start again</a>.`)
           : notice("info", html`Send before ${deadline} Lagos time, about ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"} from now. This page updates itself.`)}
         <h1>Now ${inBundle ? `gift the bundle ${inBundle.name}` : `send ${formatNaira(t.requested_kobo)} of ${from} airtime`} to <span class="big">${t.receiving_number}</span></h1>
-        <p><strong>${t.receiving_number} is our own ${from} number.</strong> Do not put ${mask(t.recipient_number)} in the code: ${from} cannot send airtime to another network, which is the whole reason we are in the middle. Send to us, and we pay ${to}.</p>
-        <p>Use ${from}'s own ${inBundle ? "data gifting" : "airtime transfer"} from your line ${mask(t.sender_number)}. The recipient gets ${gets} on ${to} once it lands.${outBundle && !inBundle ? ` Send exactly ${formatNaira(t.requested_kobo)}: that covers the bundle's ${formatNaira(outBundle.price_kobo)} and the fee.` : ""}</p>
+        <p><strong>${t.receiving_number} is our own ${from} number.</strong> Do not put the recipient's number in the code: ${from} cannot send airtime to another network, which is the whole reason we are in the middle. Send to us, and we pay ${to}.</p>
+        <p>Use ${from}'s own ${inBundle ? "data gifting" : "airtime transfer"} from your line ${mask(t.sender_number)}.${outBundle && !inBundle ? ` Send exactly ${formatNaira(t.requested_kobo)}: that covers the bundle's ${formatNaira(outBundle.price_kobo)} and the fee.` : ""}</p>
+        ${/* The one number the sender must be able to check before they
+              commit. Airtime cannot be taken back off a wrong line, so it
+              is shown in full here, while nothing has moved, and masked
+              everywhere after that in case the link is passed on. */ ""}
+        <div class="deal"><p>We will send ${gets} to <strong>${t.recipient_number}</strong> on ${to}.</p>
+          <p>Check that number before you dial. Airtime cannot be taken back once it lands on a wrong line. <a href="/">Wrong? Start again</a>.</p></div>
         ${dial
           ? html`<p class="dial-label">On your ${from} line, dial:</p>
             <p class="dial">${shown}</p>
