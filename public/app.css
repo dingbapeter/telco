@@ -64,6 +64,10 @@ form.inline { display: inline; }
 .check.bad .dot { background: #9a1b1b; }
 .check.warn .dot { background: #b8860b; }
 .check .what { color: #5a5a5a; font-size: 0.92rem; }
+/* Two blocks side by side where there is room, and stacked on a phone,
+   where half a screen is not enough for a column of money. */
+.pair { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+.pair > * { flex: 1 1 22rem; min-width: 0; }
 /* A chart drawn on the server as plain shapes: no script, and no written
    style, which the security policy refuses. */
 .bars { background: #ffffff; border: 1px solid #d9d9d9; margin: 0.8rem 0; display: block; }

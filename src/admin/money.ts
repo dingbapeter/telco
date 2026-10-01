@@ -20,15 +20,18 @@ const rows = (lines: Line[], empty: string): Html =>
 function bars(days: Day[]): Html {
   if (days.length === 0) return html`<p class="muted">Nothing moved between those dates.</p>`;
   const most = Math.max(...days.map((d) => Math.abs(d.profitKobo)), 1);
-  const w = Math.max(1, Math.floor(100 / days.length));
-  const gap = w > 3 ? 1 : 0;
-  return html`<svg class="bars" viewBox="0 0 ${days.length * w} 60" width="100%" height="140" preserveAspectRatio="none" role="img"
+  // A fixed width per day, kept in shape rather than stretched to fill the
+  // page: one day on its own should look like one day, not a green wall.
+  const w = 6;
+  const gap = 1;
+  const width = Math.max(days.length * w, 36);
+  return html`<svg class="bars" viewBox="0 0 ${width} 60" width="100%" height="140" preserveAspectRatio="xMinYMid meet" role="img"
       aria-label="Profit for each day from ${days[0]!.day} to ${days[days.length - 1]!.day}">
-    <line x1="0" y1="30" x2="${days.length * w}" y2="30" class="axis"></line>
+    <line x1="0" y1="30" x2="${width}" y2="30" class="axis"></line>
     ${days.map((d, i) => {
       const h = Math.max(1, Math.round((Math.abs(d.profitKobo) / most) * 28));
       const up = d.profitKobo >= 0;
-      return html`<rect x="${i * w}" y="${up ? 30 - h : 30}" width="${Math.max(1, w - gap)}" height="${h}" class="${up ? "up" : "down"}">
+      return html`<rect x="${i * w}" y="${up ? 30 - h : 30}" width="${w - gap}" height="${h}" class="${up ? "up" : "down"}">
         <title>${d.day}: ${formatNaira(d.profitKobo)}</title></rect>`;
     })}
   </svg>`;
@@ -71,7 +74,7 @@ async function moneyPage(req: Request, db: pg.Pool, message?: Html, status = 200
     ${sheet.addsUp
       ? ""
       : notice("problem", `The books do not add up: what we hold less what we owe is ${formatNaira(sheet.ownKobo)}, and what was put in plus what was earned is ${formatNaira(sheet.putInKobo + sheet.earnedKobo)}. Nothing should be able to do this. Send the founder this page.`)}
-    <div class="row">
+    <div class="pair">
       <div><h3>What we hold</h3><div class="scroll"><table><tr><th>Where</th><th class="num">How much</th></tr>
         ${rows(sheet.held, "Nothing yet.")}
         <tr><th>In all</th><th class="num">${money(sheet.heldKobo)}</th></tr></table></div></div>
@@ -93,7 +96,7 @@ async function moneyPage(req: Request, db: pg.Pool, message?: Html, status = 200
       <div class="card"><div class="label">Held for the networks</div><div class="value">${money(p.networkShareKobo)}</div><span class="muted">theirs, not ours</span></div>
     </div>
     ${bars(p.days)}
-    <div class="row">
+    <div class="pair">
       <div><h3>Earned</h3><div class="scroll"><table><tr><th>From</th><th class="num">How much</th></tr>
         ${rows(p.earned, "Nothing earned in this period.")}
         <tr><th>In all</th><th class="num">${money(p.earnedKobo)}</th></tr></table></div></div>

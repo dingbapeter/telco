@@ -160,7 +160,8 @@ test("the money page shows the three numbers a founder needs, and hands the peri
   assert.match(page.text, /What we hold<\/div><div class="value">/);
   assert.match(page.text, /What is ours<\/div><div class="value">/);
   assert.match(page.text, /Our share of transfer fees/);
-  assert.match(page.text, /Fee share owed to MTN/);
+  assert.match(page.text, /MTN airtime/, "a long ledger name is shortened so the amount stays on a phone screen");
+  assert.match(page.text, /MTN(&#39;|')s share of fees/);
   // The apostrophe is escaped on the way out, as every value is.
   assert.match(page.text, /Agents(&#39;|') wallets \(1\)/);
   assert.match(page.text, /<svg class="bars"/, "the chart is drawn on the server, with no script");

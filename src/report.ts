@@ -9,6 +9,37 @@ import { START_OF_TODAY } from "./receiving.ts";
 
 export type Line = { code: string; name: string; kobo: number };
 
+// The ledger's own names describe an account to somebody reading the books.
+// On a phone they push the amount off the screen, so the money page uses
+// these instead, and falls back to the ledger's name for anything new.
+const SHORT: Record<string, string> = {
+  "cash:bank": "Our bank account",
+  "cash:paystack": "Held by Paystack",
+  "wallet:vtpass": "Provider wallet",
+  "owed:senders": "Senders not yet paid out",
+  "owed:buyers": "Buyers not yet delivered",
+  "owed:sellers": "Sellers not yet paid",
+  "revenue:fees": "Our share of transfer fees",
+  "revenue:provider_commission": "Commission from the provider",
+  "revenue:sellback_margin": "Margin on what we buy back",
+  "revenue:voided_credit": "Credit stopped",
+  "expense:retail_discounts": "Discounts given to buyers",
+  "expense:agent_commissions": "Commission paid to agents",
+  "expense:payment_fees": "Payment provider's fees",
+  "expense:losses": "Airtime and data lost",
+};
+
+export function shortName(code: string, name: string): string {
+  if (SHORT[code]) return SHORT[code];
+  const pool = /^pool:(.+)$/.exec(code);
+  if (pool) return `${pool[1]} airtime`;
+  const data = /^datapool:(.+)$/.exec(code);
+  if (data) return `${data[1]} data`;
+  const owed = /^owed:(.+)$/.exec(code);
+  if (owed) return `${owed[1]}'s share of fees`;
+  return name;
+}
+
 export type BalanceSheet = {
   held: Line[];
   owed: Line[];
@@ -38,7 +69,7 @@ async function linesOf(db: Queryable, kinds: string[], where = "", params: unkno
      GROUP BY a.code, a.name, a.kind ORDER BY a.code`,
     [...params, kinds],
   );
-  return rows;
+  return rows.map((r) => ({ ...r, name: shortName(r.code, r.name) }));
 }
 
 // Agent wallets are one line each in the ledger and one line between them
