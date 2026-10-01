@@ -32,6 +32,13 @@ What we do with those codes:
 When a network changes its code, you change one setting and every sender
 sees the new one. No deploy.
 
+The same is true in the other direction. When somebody **sells** us airtime
+or data at `/sell`, they dial their own network's transfer or gifting code
+to our number, exactly as a sender does. There is no code we could give
+them that would take value off their line, which is why the seller always
+dials it themselves, and why the page says in so many words that the number
+shown is ours.
+
 ## 2. Our own references. Ours, made by us
 
 - A transfer reference, shown to the sender so they can check on it.
@@ -39,6 +46,9 @@ sees the new one. No deploy.
 - A list reference for a shop's bulk purchase, `BK-` and eight characters.
 - An agent's code, five characters, and their link `/a/<code>`.
 - A top-up reference for an agent paying us, `AT-` and six characters.
+- A sale to us, `SB-` and eight characters, and the credit code it earns,
+  `CR-` and ten characters. A credit code is money to whoever holds it, so
+  it is ten characters from the same alphabet rather than eight.
 
 All of these are made on our server from the operating system's own random
 number source, in an alphabet with no 0, O, 1, I or L in it, so a person
@@ -84,6 +94,12 @@ signed, the honest position is: **buying from us works today from the page,
 with card, bank transfer or the buyer's own bank USSD code; moving airtime
 off a customer's line will always be the network's own code, dialled by the
 customer; and a Telco short code waits on a contract, not on software.**
+
+## What the person buying from us with credit dials
+
+Nothing. A credit code is typed into the Buy airtime page, not into a dial
+pad. It is not a recharge voucher and it will not work on a network's own
+`*555*` style menu: it is credit with us, spendable on any network.
 
 ## What an agent's shop dials
 

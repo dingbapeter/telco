@@ -194,6 +194,10 @@ code waits on an aggregator contract, not on software.
   a whole list of customers in one go, can download a statement, and can
   buy from its own till software with a key it makes itself. See
   docs/AGENTS.md and docs/AGENT_API.md.
+- **A seller** has airtime or data they cannot use and wants value for it.
+  They send it to us with their network's own code and take credit to spend
+  with us, or cash by bank transfer where that is switched on. See
+  docs/SELLBACK.md.
 - **The founder** runs everything from the command centre.
 
 ## The order of building

@@ -357,6 +357,62 @@ still answers correctly; with only the lookup off, the index raises the
 violation and the code answers with the order the winner made. Do not
 remove either.
 
+## Buying back suite (`tests/sellback.test.ts`)
+
+Drives selling airtime and data to us from the quote to the credit code or
+the bank transfer: the circle guard, the caps, holds and returns, blocked
+numbers, credit codes, cash with its holding time and ceiling, bought data
+and its expiry, the phone bridge path and the command centre.
+Checked on 1 October 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| Airtime bought back for more than it can be sold for | Red |
+| An agent's own rate not counted as a price we sell at | Red |
+| Paid on what was quoted instead of what arrived | Red |
+| Value below the smallest we buy taken anyway | Red |
+| Value from a blocked number bought anyway | Red |
+| A blocked number quoted a rate | Red |
+| One number allowed to sell as much as it likes in a day | Red |
+| The day's buying ceiling ignored | Red |
+| What we buy not counted against the SIM's daily cap | Red |
+| A sale taking airtime a transfer was waiting for | Red |
+| Cash paid before the holding time is up | Red |
+| The day's cash ceiling ignored | Red |
+| A credit code spent past what it holds | Red |
+| A credit code read without a lock, so two orders share one balance | Red |
+| Stopping a credit code leaving the money owed to nobody | Red |
+| Bought data recorded with the bundle's full validity | Red |
+| Margin on a purchase never booked | Red |
+| The phone's record unable to hold what buying back answers | Red |
+| A sale paid twice, with both defences off | Red |
+
+Two of these were real faults, found by the suite rather than by a
+mutation. The phone bridge keeps its own record of what became of every
+message, with a database rule listing the answers it may hold, and buying
+value back was not one of them: the first real message from a phone would
+have failed with a database error, which is why that path is driven through
+the bridge in a test and not only through the function underneath it. And a
+message we bought value on would have stayed in the unmatched list for
+ever, telling the founder to go and pay a seller who had already been paid.
+
+### Three defences on purpose
+
+Paying a seller their cash twice is stopped three times over: the state is
+checked when the row is read, the claim that moves it to paid is
+conditional on the state, and the journal is keyed on the sale so a second
+posting does nothing. Turning off the first two is what the mutation above
+does, and the suite goes red on the answer the second call gives. Even
+then the money is safe, because the third defence is the one holding the
+books. Do not remove any of them.
+
+### The one that needed investigating
+
+The conditional claim on its own left the suite green, because the state
+check in front of it answered first. That is the second defence doing its
+job, not a gap, so the mutation now turns off both and the finding is
+written here rather than "fixed" by deleting one of them.
+
 ## Security review (20 September 2026)
 
 Four readings of the whole code in parallel: the way people sign in, the
@@ -425,6 +481,11 @@ classes those pages never use, so the header lost its spacing on such a
 browser. Safari and Firefox refuse a screenshot taller than 32767 device
 pixels, which the settings page passes on a phone drawing four and a half
 device pixels per pixel, so a page that tall keeps its first screen.
+
+Findings on 1 October 2026: none. The selling page, a seller's instruction
+page and the two buying back pages in the command centre were added to the
+sweep with a seeded sale waiting and another waiting for cash, and every
+engine was clean first time.
 
 Findings on 30 September 2026, when the shop's new pages and the agent's
 own page in the command centre were added to the sweep, all fixed. The

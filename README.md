@@ -19,10 +19,10 @@ The working name is Telco. Suggested names are in
 - `docs/TESTING.md` records which deliberate breakages each check catches.
 - `docs/SECURITY.md` is the security position and what was found and fixed.
 - `docs/BRIDGE.md`, `docs/PROVIDER.md`, `docs/RETAIL.md`, `docs/DATA.md`,
-  `docs/AGENTS.md`, `docs/AGENT_API.md` and `docs/TELCOS.md` cover the
-  phone bridge, the top-up provider, selling airtime, selling data,
-  agents and shops, the interface their own software uses, and the
-  networks.
+  `docs/AGENTS.md`, `docs/AGENT_API.md`, `docs/SELLBACK.md` and
+  `docs/TELCOS.md` cover the phone bridge, the top-up provider, selling
+  airtime, selling data, agents and shops, the interface their own software
+  uses, buying airtime and data back from people, and the networks.
 
 ## Running it
 

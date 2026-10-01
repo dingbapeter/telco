@@ -26,9 +26,9 @@ const profiles = [
   { name: "no-script-phone", ...devices["Pixel 5"], defaultBrowserType: undefined, javaScriptEnabled: false },
 ];
 
-const publicPages = ["/", "/buy", "/agent/login", `/t/${process.env.TRANSFER_REF}`, `/o/${process.env.ORDER_REF}`];
+const publicPages = ["/", "/buy", "/sell", "/agent/login", `/t/${process.env.TRANSFER_REF}`, `/o/${process.env.ORDER_REF}`, `/s/${process.env.SELL_REF}`];
 const agentPages = ["/agent", "/agent/buy", "/agent/bulk", `/agent/list/${process.env.BATCH_REF}`, "/agent/statement", "/agent/keys", "/agent/topup", "/agent/withdraw", "/agent/link"];
-const adminPages = ["/admin", "/admin/transfers", "/admin/orders", "/admin/agents", "/admin/inbound", "/admin/pools", "/admin/numbers", "/admin/bridge", "/admin/bundles", "/admin/settlement", "/admin/settings", "/admin/checklist", "/admin/audit", `/admin/transfers/${process.env.TRANSFER_ID}`, `/admin/agents/${process.env.AGENT_ID}`];
+const adminPages = ["/admin", "/admin/transfers", "/admin/orders", "/admin/agents", "/admin/inbound", "/admin/pools", "/admin/numbers", "/admin/bridge", "/admin/bundles", "/admin/settlement", "/admin/settings", "/admin/checklist", "/admin/audit", `/admin/transfers/${process.env.TRANSFER_ID}`, `/admin/agents/${process.env.AGENT_ID}`, "/admin/sellbacks", `/admin/sellbacks/${process.env.SELLBACK_ID}`];
 
 const problems = [];
 const launchers = { chromium, webkit, firefox };

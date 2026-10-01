@@ -5,7 +5,7 @@ at the time it was asked. This file exists so that losing a conversation does
 not lose the decisions. When a decision is made, move it to the "Decided"
 section at the bottom with the date and the answer. Never delete a line.
 
-Last updated: 30 September 2026, after building what a POS agent needs.
+Last updated: 1 October 2026, after building buying back.
 
 ## Needed before the core can be built
 
@@ -273,6 +273,54 @@ decision to open it, and to whom. **Recommendation:** open it for a shop
 only after they have bought through the pages for a month, so the first
 integration is with somebody whose volume you already know. The switch and
 the requests a key may make each minute are in Settings, Agents.
+
+### 24. Cash for sellers, or credit only
+
+Buying airtime and data back is built and switched off. Credit is built to
+be the default: a code the seller spends with us, which never leaves the
+business. Cash by bank transfer is built too, and off.
+
+**Recommendation: open with credit only.** Credit cannot be used to turn
+stolen value into money, which is the whole reason anybody would attack
+this. Watch who sells, for a month. Then, if you want cash, turn it on with
+the smallest ceiling you can live with, a holding time of a day, and a rule
+that you look at every seller's history before settling. The product gives
+you all four.
+
+**If you do want cash from day one**, say so and I will tell you what else I
+would build first: a name check against the line's registration, and a
+second approver above an amount.
+
+### 25. What we pay for airtime and data
+
+Set per network under Settings, Buying back. The defaults are 80 percent of
+face value for airtime and 70 percent for a bundle, with a 3 percent gap
+kept below the cheapest price anybody can buy from us.
+
+**Needed from you:** the rates you actually want, and the daily ceiling for
+how much we are willing to hold. The ceiling starts at zero, which means
+nothing is bought until you set it. **Recommendation:** start at 75 percent
+for airtime and 65 percent for data on one network only, with a ceiling of
+fifty thousand naira a day, until you know how fast you can sell it on
+again. The margin is not the problem; being left holding stock is.
+
+### 26. Know your customer, and the regulator
+
+We buy value from a person and give them money. Nothing in Nigerian law
+makes that a payment service, and we are not holding anybody's funds, but
+paying cash for value bought with somebody else's card is the shape money
+laundering takes, and the questions a bank or the Nigerian Financial
+Intelligence Unit would ask start there.
+
+**Needed from you, with a lawyer, before cash is switched on:** whether we
+must identify a seller above an amount, what records to keep and for how
+long, and whether our bank needs telling what this account does.
+**Recommendation:** credit only until that advice is in hand; it keeps the
+question academic. When you do ask, ask about three things: the threshold
+for identifying a seller, the reporting duty on a suspicious pattern, and
+whether reselling gifted airtime needs anything we do not already have.
+This is next to item 17, the networks and the licence, because the same
+lawyer should answer both.
 
 ## Decided
 
