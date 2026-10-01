@@ -415,6 +415,35 @@ check in front of it answered first. That is the second defence doing its
 job, not a gap, so the mutation now turns off both and the finding is
 written here rather than "fixed" by deleting one of them.
 
+## Money report suite (`tests/report.test.ts`)
+
+Drives the Money page: the balance sheet, the profit and loss for a period,
+the Lagos day boundaries and the file it hands over. Checked on 1 October
+2026 after money had been moved through every line the business has: a
+transfer with a fee and a network share, a discounted sale paid by card
+with a payment fee, an agent's commission, airtime and data bought back,
+and a bundle written off when it expired unsold.
+
+| Breakage introduced | Result |
+| --- | --- |
+| What is owed to other people counted as ours | Red |
+| The books adding up reported without being checked | Red |
+| A period taking in journals from outside its dates | Red |
+| The last day of a period left out of it | Red |
+| The network's share of the fee counted as our earnings | Red |
+| Expenses left out of the profit | Red |
+
+### The one that needed investigating
+
+The alarm that says the books do not add up could be hardcoded to "yes" and
+the suite stayed green, because the test checked the same arithmetic itself
+rather than the product's. The database refuses to post a journal that does
+not balance, so there is no honest way to make a real ledger disagree and
+watch the alarm sound. The answer was to pull the arithmetic out as a
+function of four numbers and test it with figures that are deliberately
+wrong. The alarm is now proven to be able to say no, which is the only
+thing worth proving about an alarm.
+
 ## Security review (20 September 2026)
 
 Four readings of the whole code in parallel: the way people sign in, the

@@ -7,6 +7,7 @@ import { registerChecklist } from "./admin/checklist.ts";
 import { registerInbound } from "./admin/inbound.ts";
 import { registerLogin } from "./admin/login.ts";
 import { registerNumbers } from "./admin/numbers.ts";
+import { registerMoney } from "./admin/money.ts";
 import { registerOrders } from "./admin/orders.ts";
 import { registerOverview } from "./admin/overview.ts";
 import { registerSettlement } from "./admin/settlement.ts";
@@ -32,6 +33,7 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicB
   }, false);
   registerLogin(app, options.secureCookies);
   registerOverview(app);
+  registerMoney(app);
   registerTransfers(app);
   registerInbound(app);
   registerPools(app);

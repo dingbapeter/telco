@@ -16,6 +16,7 @@ The working name is Telco. Suggested names are in
 - `docs/WAITING_ON_FOUNDER.md` lists every open decision, with a
   recommendation for each.
 - `docs/DEPLOY.md` is how to put it on a server, step by step.
+- `docs/MONEY.md` is the page that says what is ours and what it earned.
 - `docs/TESTING.md` records which deliberate breakages each check catches.
 - `docs/SECURITY.md` is the security position and what was found and fixed.
 - `docs/BRIDGE.md`, `docs/PROVIDER.md`, `docs/RETAIL.md`, `docs/DATA.md`,

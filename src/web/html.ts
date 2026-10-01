@@ -50,6 +50,7 @@ export type PageOptions = {
 
 const NAV: { href: string; label: string }[] = [
   { href: "/admin", label: "Overview" },
+  { href: "/admin/money", label: "Money" },
   { href: "/admin/transfers", label: "Transfers" },
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/agents", label: "Agents" },

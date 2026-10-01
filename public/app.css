@@ -64,6 +64,13 @@ form.inline { display: inline; }
 .check.bad .dot { background: #9a1b1b; }
 .check.warn .dot { background: #b8860b; }
 .check .what { color: #5a5a5a; font-size: 0.92rem; }
+/* A chart drawn on the server as plain shapes: no script, and no written
+   style, which the security policy refuses. */
+.bars { background: #ffffff; border: 1px solid #d9d9d9; margin: 0.8rem 0; display: block; }
+.bars .axis { stroke: #d9d9d9; stroke-width: 0.4; }
+.bars rect.up { fill: #1d6b3a; }
+.bars rect.down { fill: #9a1b1b; }
+h3 { font-size: 1rem; margin: 1.2rem 0 0.4rem; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0.5rem 0; }
 /* On a narrow phone a long term and its value together are wider than the
    screen, which pushed the whole page sideways. Stacked, they fit. */

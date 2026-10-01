@@ -166,6 +166,8 @@ await page.waitForURL(`${base}/admin`);
 await shot("command-centre");
 await page.goto(`${base}/admin/sellbacks`);
 await shot("command-centre-buying-back");
+await page.goto(`${base}/admin/money`);
+await shot("command-centre-money");
 
 await browser.close();
 server.close();
