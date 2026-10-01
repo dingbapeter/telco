@@ -45,6 +45,7 @@ export type Order = {
   agent_id: number | null;
   batch_id: number | null;
   client_reference: string | null;
+  credit_code: string | null;
   delivery_funding_account: string | null;
 };
 
@@ -147,7 +148,9 @@ export async function createOrder(db: Client, actor: string, input: OrderInput):
   return order;
 }
 
-export type PaymentIn = { method: "bank_transfer" | "paystack"; reference: string; paidKobo: number; feeKobo: number; cashAccount: string };
+// A credit code is a way of paying like any other: the money moves out of
+// what we owe sellers instead of out of a bank account.
+export type PaymentIn = { method: "bank_transfer" | "paystack" | "credit"; reference: string; paidKobo: number; feeKobo: number; cashAccount: string };
 
 // Money has arrived. Claims the order once and books the cash, whichever
 // way and however many times we are told about the same payment.

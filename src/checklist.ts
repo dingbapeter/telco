@@ -7,6 +7,7 @@ import { getSetting, getSettingValue, getSettingValues, NETWORK_CODES, SETTINGS 
 import { STALE_AFTER_MINUTES } from "./admin/bridge.ts";
 import { expiringSoon } from "./datalots.ts";
 import { paystackFromEnv } from "./payments/paystack.ts";
+import { percentOf, rateFor } from "./sellbacks.ts";
 import { railFromEnv } from "./rails/rail.ts";
 
 export type Check = {
@@ -198,6 +199,54 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
     checks.push(agentCount > 0 ? { status: "ok", title: `${agentCount} active agent(s)`, detail: "Agents can log in, bring senders and buy from their wallets." } : { status: "warn", title: "Agents are on but there are none", detail: "Nobody has an agent account yet.", fix: "Command centre, Agents: add an agent and give them their first password." });
     checks.push(waitingWithdrawals.n === 0 ? { status: "ok", title: "No agent is waiting to be paid", detail: "Every withdrawal request has been settled." } : { status: "bad", title: `${waitingWithdrawals.n} withdrawal(s) waiting, ${formatNaira(waitingWithdrawals.total)}`, detail: "Agents are waiting for their money.", fix: "Command centre, Agents: pay each by bank transfer and record the reference." });
   }
+  // Buying back. Only checked when it is on, and every row says what to set
+  // and where, because a rate that fails the circle guard refuses every
+  // seller without the founder ever seeing why.
+  const [buyAirtime, buyData, cashOn, cashCap, holdHours, buyCaps] = await getSettingValues(db, [
+    "sellback.airtime_enabled",
+    "sellback.data_enabled",
+    "sellback.cash_enabled",
+    "sellback.cash_daily_cap_kobo",
+    "sellback.cash_hold_hours",
+    "sellback.daily_buy_cap_kobo",
+  ] as const);
+  if (buyAirtime || buyData) {
+    for (const c of NETWORK_CODES) {
+      for (const kind of ["airtime", "data"] as const) {
+        if (kind === "airtime" && !buyAirtime) continue;
+        if (kind === "data" && !buyData) continue;
+        const r = await rateFor(db, c, kind);
+        if (!r.ok && r.reason.startsWith("We are not buying")) continue;
+        checks.push(
+          r.ok
+            ? { status: "ok", title: `${c} ${kind} is bought at ${percentOf(r.rate)}`, detail: `A seller is paid ${percentOf(r.rate)} of what the ${kind} is worth.` }
+            : { status: "bad", title: `${c} ${kind} cannot be bought safely`, detail: r.reason, fix: "Command centre, Settings, Buying back: lower the rate, or lower the discount it clashes with." },
+        );
+      }
+      if (buyCaps[c] === 0) {
+        checks.push({ status: "warn", title: `No daily ceiling on ${c} buying`, detail: `The most we will buy on ${c} in a day is set to nothing, so every seller on ${c} is refused.`, fix: "Command centre, Settings, Buying back: set the most we will buy in a day." });
+      }
+    }
+    const waitingSales = (await db.query<{ n: number; total: number }>("SELECT count(*)::int AS n, coalesce(sum(pay_kobo), 0)::bigint AS total FROM sellbacks WHERE state = 'received' AND outcome = 'cash'")).rows[0]!;
+    if (waitingSales.n > 0) {
+      checks.push({ status: "bad", title: `${waitingSales.n} seller(s) waiting for cash, ${formatNaira(waitingSales.total)}`, detail: "People have sent us value and are waiting for their money.", fix: "Command centre, Buying back: pay each by bank transfer and record the reference." });
+    }
+    const heldSales = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM sellbacks WHERE state = 'held'")).rows[0]!.n;
+    if (heldSales > 0) {
+      checks.push({ status: "bad", title: `${heldSales} sale(s) to us held`, detail: "Value has landed that a person has to decide on.", fix: "Command centre, Buying back: buy it anyway, or send it back to the seller's line." });
+    }
+    if (cashOn && cashCap === 0) {
+      checks.push({ status: "warn", title: "Cash is switched on but the day's ceiling is nothing", detail: "Sellers can ask for cash, and none can be paid.", fix: "Command centre, Settings, Buying back: set the most cash we will pay in a day, or switch cash off." });
+    }
+    if (cashOn && holdHours === 0) {
+      checks.push({ status: "warn", title: "Cash can be paid with no holding time", detail: "A stolen line can be turned into money before anybody notices.", fix: "Command centre, Settings, Buying back: set a holding time, a day to start with." });
+    }
+    const unsoldData = await expiringSoon(db, 2);
+    for (const row of unsoldData) {
+      checks.push({ status: "warn", title: `${formatNaira(row.value)} of ${row.network_code} data expires within two days`, detail: `${row.lots} lot(s) bought and not yet sold on. Unsold data is a loss.`, fix: "Command centre, Settings, Retail top-up: discount that network to move it, or lower what we pay for data on it." });
+    }
+  }
+
   const stuckOrders = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM orders WHERE state IN ('held', 'delivery_failed') OR (state = 'delivering' AND created_at < now() - interval '1 hour')")).rows[0]!.n;
   checks.push(stuckOrders === 0 ? { status: "ok", title: "No order is waiting on a person", detail: "Nothing is held, failed or stuck delivering." } : { status: "bad", title: `${stuckOrders} order(s) waiting on a person`, detail: "Buyers have paid and are waiting.", fix: "Command centre, Orders, Needs a person." });
 
@@ -212,7 +261,7 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
       : { status: "bad", title: `${stuck} transfer(s) waiting on a person`, detail: "Senders are waiting.", fix: "Command centre, Transfers, Needs a person." },
   );
 
-  const unmatched = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM inbound_notifications WHERE matched_transfer_id IS NULL AND received_at > now() - interval '7 days'")).rows[0]!.n;
+  const unmatched = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM inbound_notifications WHERE matched_transfer_id IS NULL AND matched_sellback_id IS NULL AND received_at > now() - interval '7 days'")).rows[0]!.n;
   checks.push(
     unmatched === 0
       ? { status: "ok", title: "All airtime received this week is matched", detail: "No unmatched notifications in the last seven days." }

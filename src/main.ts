@@ -7,6 +7,7 @@ import { migrate } from "./migrate.ts";
 import { railFromEnv } from "./rails/rail.ts";
 import { expireQuotes } from "./transfers.ts";
 import { expireOrders } from "./orders.ts";
+import { expireSellbacks } from "./sellbacks.ts";
 import { PhoneRail } from "./sendingphone.ts";
 import { runDeliveryCycle, runPayoutCycle } from "./worker.ts";
 
@@ -30,6 +31,7 @@ console.log(`Command centre listening on http://${config.host}:${config.port}/ad
 const timer = setInterval(() => {
   expireQuotes(db).catch((err: unknown) => console.error("expiring quotes failed", err));
   expireOrders(db).catch((err: unknown) => console.error("expiring orders failed", err));
+  expireSellbacks(db).catch((err: unknown) => console.error("expiring sales to us failed", err));
   forgetOldSessions(db).catch((err: unknown) => console.error("clearing old sessions failed", err));
   forgetOldAgentSessions(db).catch((err: unknown) => console.error("clearing old agent sessions failed", err));
 }, 60_000);

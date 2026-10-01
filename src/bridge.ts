@@ -219,7 +219,7 @@ export async function ingestMessage(db: pg.PoolClient, device: Device, receiving
     dataMb: inbound.dataMb,
     ...(validDate ? { occurredAt: validDate } : {}),
   });
-  const ref = "transfer" in outcome ? outcome.transfer.reference : undefined;
+  const ref = "transfer" in outcome ? outcome.transfer.reference : "sellback" in outcome ? outcome.sellback.reference : undefined;
   return finish(outcome.outcome, outcome.notificationId, "reason" in outcome ? outcome.reason : null, ref);
 }
 

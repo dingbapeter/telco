@@ -9,6 +9,8 @@ import { computeFee, loadFeeRule, requiredAmountFor, type FeeBreakdown, type Fee
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { assertKobo, formatNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
+import { chooseReceivingNumber, START_OF_TODAY } from "./receiving.ts";
+import { matchSellback, type Sellback } from "./sellbacks.ts";
 import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
 
 export type TransferState =
@@ -71,9 +73,6 @@ export function inboundAccount(t: Pick<Transfer, "in_kind" | "from_network">): s
 }
 
 type Client = pg.PoolClient;
-
-// Lagos midnight, because every daily limit in the product is a Nigerian day.
-const START_OF_TODAY = "(date_trunc('day', now() AT TIME ZONE 'Africa/Lagos') AT TIME ZONE 'Africa/Lagos')";
 
 function isNetwork(code: string): code is NetworkCode {
   return (NETWORK_CODES as readonly string[]).includes(code);
@@ -237,18 +236,7 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
     throw err;
   }
 
-  // The receiving number with the most room left today takes the transfer.
-  const receiving = await db.query<{ number: string }>(
-    `SELECT r.number FROM receiving_numbers r
-     LEFT JOIN LATERAL (
-       SELECT coalesce(sum(coalesce(received_kobo, requested_kobo)), 0)::bigint AS used FROM transfers t
-       WHERE t.receiving_number = r.number AND t.created_at >= ${START_OF_TODAY} AND t.state NOT IN ('expired', 'refunded')
-     ) u ON true
-     WHERE r.network_code = $1 AND r.active AND (r.daily_cap_kobo = 0 OR u.used + $2 <= r.daily_cap_kobo)
-     ORDER BY CASE WHEN r.daily_cap_kobo = 0 THEN 0 ELSE u.used END ASC, r.number ASC LIMIT 1`,
-    [from, amount],
-  );
-  const receivingNumber = receiving.rows[0]?.number;
+  const receivingNumber = await chooseReceivingNumber(db, from, amount);
   if (!receivingNumber) {
     throw new UserFacingError(
       "no_receiving_number",
@@ -315,7 +303,10 @@ export type InboundOutcome =
   | { outcome: "duplicate"; notificationId: number }
   | { outcome: "unmatched"; notificationId: number }
   | { outcome: "matched"; notificationId: number; transfer: Transfer }
-  | { outcome: "held"; notificationId: number; transfer: Transfer; reason: string };
+  | { outcome: "held"; notificationId: number; transfer: Transfer; reason: string }
+  // Value somebody sold us rather than sent to be moved on.
+  | { outcome: "bought"; notificationId: number; sellback: Sellback }
+  | { outcome: "bought_held"; notificationId: number; sellback: Sellback; reason: string };
 
 // Records a network notification and, if a transfer is waiting for it, marks
 // the airtime as received and books it. The same notification arriving twice
@@ -366,7 +357,13 @@ export async function recordInbound(db: Client, actor: string, n: InboundNotific
         [network, receiving, sender, amount, grace],
       );
   const candidate = candidates.rows[0];
-  if (!candidate) return { outcome: "unmatched", notificationId };
+  // Nothing waiting to be moved: somebody may be selling it to us instead.
+  // Tried second so a transfer, which the sender is waiting on, always wins.
+  if (!candidate) {
+    const bought = await matchSellback(db, actor, { network, receivingNumber: receiving, sellerNumber: sender, amountKobo: amount, dataMb: n.dataMb, notificationId });
+    if (!bought) return { outcome: "unmatched", notificationId };
+    return bought.hold_reason ? { outcome: "bought_held", notificationId, sellback: bought, reason: bought.hold_reason } : { outcome: "bought", notificationId, sellback: bought };
+  }
   const updated = await bookInbound(db, actor, candidate, amount, notificationId, {});
   if (!updated) return { outcome: "unmatched", notificationId };
   return updated.hold_reason

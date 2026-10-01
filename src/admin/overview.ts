@@ -18,7 +18,7 @@ export async function liveNumbers(db: pg.Pool) {
        FROM transfers WHERE created_at >= ${START_OF_TODAY}`,
     ),
     db.query<{ state: string; n: number }>("SELECT state, count(*)::int AS n FROM transfers GROUP BY state"),
-    db.query<{ n: number }>("SELECT count(*)::int AS n FROM inbound_notifications WHERE matched_transfer_id IS NULL"),
+    db.query<{ n: number }>("SELECT count(*)::int AS n FROM inbound_notifications WHERE matched_transfer_id IS NULL AND matched_sellback_id IS NULL"),
     getSettingValue(db, "pool.floor_kobo"),
   ]);
   const byCode = Object.fromEntries(ledger.map((a) => [a.code, a.balanceKobo]));

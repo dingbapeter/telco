@@ -14,7 +14,7 @@ async function inboundPage(req: Request, db: pg.Pool, message?: Html, status = 2
   const pageNo = Math.max(1, Number(req.query.get("page") ?? 1) || 1);
   const [unmatched, recent, numbers] = await Promise.all([
     db.query<{ id: number; network_code: string; receiving_number: string; sender_number: string; amount_kobo: number; raw_text: string; source: string; received_at: Date }>(
-      "SELECT id, network_code, receiving_number, sender_number, amount_kobo, raw_text, source, received_at FROM inbound_notifications WHERE matched_transfer_id IS NULL ORDER BY received_at DESC LIMIT 100",
+      "SELECT id, network_code, receiving_number, sender_number, amount_kobo, raw_text, source, received_at FROM inbound_notifications WHERE matched_transfer_id IS NULL AND matched_sellback_id IS NULL ORDER BY received_at DESC LIMIT 100",
     ),
     db.query<{ id: number; network_code: string; sender_number: string; amount_kobo: number; source: string; received_at: Date; reference: string | null; transfer_id: number | null }>(
       `SELECT n.id, n.network_code, n.sender_number, n.amount_kobo, n.source, n.received_at, t.reference, t.id AS transfer_id
@@ -100,9 +100,13 @@ export function registerInbound(app: App): void {
           ? notice("ok", html`Recorded and matched to <a href="/admin/transfers/${outcome.transfer.id}">${outcome.transfer.reference}</a>. It is now waiting for payout.`)
           : outcome.outcome === "held"
             ? notice("info", html`Recorded and matched to <a href="/admin/transfers/${outcome.transfer.id}">${outcome.transfer.reference}</a>, but held: ${outcome.reason.replaceAll("_", " ")}. Open it to decide.`)
-            : outcome.outcome === "duplicate"
-              ? notice("info", "That exact message was already recorded, so nothing was added.")
-              : notice("info", "Recorded. No transfer was waiting for it, so it is in the unmatched list below.");
+            : outcome.outcome === "bought"
+              ? notice("ok", html`Recorded and matched to the sale <a href="/admin/sellbacks/${outcome.sellback.id}">${outcome.sellback.reference}</a>. ${outcome.sellback.outcome === "credit" ? "The seller's credit code is on their page." : "It is now in the cash queue."}`)
+              : outcome.outcome === "bought_held"
+                ? notice("info", html`Recorded and matched to the sale <a href="/admin/sellbacks/${outcome.sellback.id}">${outcome.sellback.reference}</a>, but held: ${outcome.reason.replaceAll("_", " ")}. Open it to decide.`)
+                : outcome.outcome === "duplicate"
+                  ? notice("info", "That exact message was already recorded, so nothing was added.")
+                  : notice("info", "Recorded. Nothing was waiting for it, so it is in the unmatched list below.");
       return inboundPage(req, db, msg);
     } catch (err) {
       if (err instanceof UserFacingError) return inboundPage(req, db, notice("problem", err.message), 400);

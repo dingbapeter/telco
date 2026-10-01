@@ -175,7 +175,7 @@ test("airtime that arrived with no quote can be matched to a transfer by its ref
   await b.login();
   await b.get("/admin/inbound");
   const r = await b.post("/admin/inbound", { network: "MTN", receiving: "08039990001", sender: "08031234567", amount: "500", raw: "stray" });
-  assert.match(oks(r.text).join(" "), /No transfer was waiting/);
+  assert.match(oks(r.text).join(" "), /Nothing was waiting for it/);
   const { transfer } = await as("sender", (c) => quoteTransfer(c, "sender", { fromNetwork: "MTN", toNetwork: "AIRTEL", senderNumber: "08031234567", recipientNumber: "08021234567", amountKobo: naira(500) }));
   const n = await pool.query("SELECT id FROM inbound_notifications");
   const wrong = await b.post(`/admin/inbound/${n.rows[0].id}/attach`, { reference: "TX-NOPE" });

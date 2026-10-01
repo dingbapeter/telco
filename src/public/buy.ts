@@ -4,6 +4,7 @@ import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { formatNaira, parseNaira } from "../money.ts";
 import { createOrder, getOrderByReference, priceFor, recordPayment, type Order } from "../orders.ts";
+import { getCreditNote, spendCredit } from "../sellbacks.ts";
 import type { PaystackProvider } from "../payments/paystack.ts";
 import { getSettingValues, NETWORK_CODES, type NetworkCode } from "../settings.ts";
 import { html, notice, type Html } from "../web/html.ts";
@@ -49,7 +50,7 @@ async function buyPage(db: pg.Pool, values: Values = {}, problem?: Html, status 
   return { kind: "html", status, body: shell("Buy airtime", body) };
 }
 
-async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message?: Html): Promise<Response> {
+async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message?: Html, status = 200): Promise<Response> {
   const [bankName, accountNumber, accountName] = await getSettingValues(db, ["retail.bank_name", "retail.bank_account_number", "retail.bank_account_name"] as const);
   const bundle = o.bundle_id ? await getBundle(db, o.bundle_id) : undefined;
   const item = bundle ? `the bundle ${bundle.name}` : `${formatNaira(o.face_kobo)} of ${NAMES[o.network_code]} airtime`;
@@ -75,13 +76,20 @@ async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message
             <dl class="ref"><dt>Bank</dt><dd>${bank.bankName}</dd><dt>Account number</dt><dd><strong>${bank.accountNumber}</strong></dd><dt>Account name</dt><dd>${bank.accountName}</dd><dt>Narration or remark</dt><dd><strong>${o.reference}</strong></dd></dl>
             <p>Put the reference in the narration so we can match your transfer. We confirm bank transfers by hand during the day, so this can take a little longer than paying online.</p>`
           : ""}
-        ${!options.paystack && !bank ? notice("problem", "No way to pay is set up yet. Come back later.") : ""}`;
+        ${expired
+          ? ""
+          : html`<h2>${options.paystack || bank ? "Or pay with a credit code" : "Pay with a credit code"}</h2>
+            <p>If you have sold us airtime or data, the code we gave you can pay for this.</p>
+            <form method="post" action="/o/${o.reference}/credit" class="panel">
+              <div class="field"><label for="code">Your credit code</label><input id="code" name="code" type="text" required autocapitalize="characters" placeholder="CR-ABCD234567"></div>
+              <button type="submit" class="secondary">Pay ${formatNaira(o.price_kobo)} with my credit</button></form>`}
+        ${!options.paystack && !bank ? notice("info", "Paying by card or bank transfer is not set up yet. A credit code still works.") : ""}`;
       refresh = 30;
       break;
     }
     case "paid":
     case "delivering":
-      main = html`${notice("ok", html`Payment of ${formatNaira(o.paid_kobo!)} received.`)}<h1>Sending ${item} to ${mask(o.recipient_number)}</h1><p>This usually takes a minute. This page updates itself.</p>`;
+      main = html`${notice("ok", html`${o.payment_method === "credit" ? `Paid with credit code ${o.credit_code}.` : `Payment of ${formatNaira(o.paid_kobo!)} received.`}`)}<h1>Sending ${item} to ${mask(o.recipient_number)}</h1><p>This usually takes a minute. This page updates itself.</p>`;
       refresh = 20;
       break;
     case "delivered":
@@ -100,7 +108,7 @@ async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message
       break;
   }
   const body = html`${main}<dl class="ref"><dt>Reference</dt><dd><strong>${o.reference}</strong></dd></dl>`;
-  return { kind: "html", body: shell("Your order", body, refresh ? { refreshSeconds: refresh } : {}) };
+  return { kind: "html", status, body: shell("Your order", body, refresh ? { refreshSeconds: refresh } : {}) };
 }
 
 export function registerBuy(app: App, options: PaymentOptions): void {
@@ -133,6 +141,38 @@ export function registerBuy(app: App, options: PaymentOptions): void {
       const o = await getOrderByReference(db, req.query.get("reference") ?? "");
       if (!o) return { kind: "html", status: 404, body: shell("Not found", html`${notice("problem", html`There is no order with that reference. <a href="/buy">Start a new one</a>.`)}`) };
       return orderPage(db, o, options);
+    },
+    false,
+  );
+
+  // Paying with a credit code somebody was given for airtime or data they
+  // sold us. The code is drawn down and the order is paid, both inside one
+  // transaction, so a code can never be spent without the order being paid.
+  app.post(
+    "/o/:reference/credit",
+    async (req, db) => {
+      const o = await getOrderByReference(db, req.query.get("reference") ?? "");
+      if (!o) return { kind: "redirect", to: "/buy" };
+      const code = (req.form.get("code") ?? "").trim().toUpperCase();
+      try {
+        if (o.state !== "awaiting_payment" && o.state !== "expired") throw new UserFacingError("already_paid", "This order is not waiting for payment.");
+        await withActor("credit", async (c) => {
+          const note = await spendCredit(c, code, o.price_kobo);
+          // The reference carries the order as well as the code, because a
+          // code may pay for more than one purchase and one payment may
+          // only ever pay one order.
+          const paid = await recordPayment(c, "credit", o.id, { method: "credit", reference: `${note.code}:${o.reference}`, paidKobo: o.price_kobo, feeKobo: 0, cashAccount: "owed:sellers" });
+          if (paid.outcome === "already") throw new UserFacingError("already_paid", "This order had already been paid, so your code was not touched.");
+          await c.query("UPDATE orders SET credit_code = $2 WHERE id = $1", [o.id, note.code]);
+        }, db);
+        return { kind: "redirect", to: `/o/${o.reference}` };
+      } catch (err) {
+        if (err instanceof UserFacingError) {
+          const left = await getCreditNote(db, code);
+          return orderPage(db, o, options, notice("problem", left ? `${err.message}${left.state === "open" && left.remaining_kobo > 0 ? ` The code still holds ${formatNaira(left.remaining_kobo)}.` : ""}` : err.message), 400);
+        }
+        throw err;
+      }
     },
     false,
   );

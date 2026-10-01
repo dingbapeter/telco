@@ -6,7 +6,7 @@ import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { formatNaira, parseNaira } from "../money.ts";
 import { normaliseNigerianNumber, prefixOf } from "../phone.ts";
-import { getSettingValue, NETWORK_CODES, type NetworkCode } from "../settings.ts";
+import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "../settings.ts";
 import { getTransferByReference, quoteTransfer, type Transfer } from "../transfers.ts";
 import { html, notice, type Html } from "../web/html.ts";
 import type { App, Request, Response } from "../web/http.ts";
@@ -39,7 +39,7 @@ ${options.stylesheet ? html`<link rel="stylesheet" href="${options.stylesheet}">
 <body>
 <header class="top"><a class="brand" href="/">Telco</a><span class="tag">Move airtime between networks</span></header>
 <main class="main">${body}</main>
-<footer class="foot"><a href="/">Move airtime</a> · <a href="/buy">Buy airtime</a> · <a href="/#status">Check a transfer</a></footer>
+<footer class="foot"><a href="/">Move airtime</a> · <a href="/buy">Buy airtime</a> · <a href="/sell">Sell airtime</a> · <a href="/#status">Check a transfer</a></footer>
 </body>
 </html>`.text
   );
@@ -50,6 +50,23 @@ ${options.stylesheet ? html`<link rel="stylesheet" href="${options.stylesheet}">
 // for somebody holding the link to work out the number.
 export function mask(number: string): string {
   return `${number.slice(0, 4)} **** ${number.slice(-2)}`;
+}
+
+export type Dial = { dial: string; shown: string; needsPin: boolean };
+
+// The network's own code with our number and the amount filled in, and the
+// PIN left as a word. Shared by the page that moves airtime and the page
+// that sells it to us, because the sender's half of both is the same act.
+export function dialInstruction(code: string, values: { amountNaira?: string; number: string; size?: string }): Dial {
+  const dial = code
+    ? code.replace("{amount}", values.amountNaira ?? "").replace("{number}", values.number).replace("{size}", values.size ?? "")
+    : "";
+  return { dial, shown: dial.replace("{pin}", "PIN"), needsPin: dial.includes("{pin}") };
+}
+
+// An amount in naira as a person types it into a dial code: 500, or 12.50.
+export function nairaDigits(kobo: number): string {
+  return kobo % 100 === 0 ? String(kobo / 100) : (kobo / 100).toFixed(2);
 }
 
 export async function networkForNumber(db: Queryable, number: string): Promise<NetworkCode | undefined> {
@@ -139,6 +156,8 @@ async function homePage(db: pg.Pool, values: FormValues = {}, problem?: Html, st
   ]);
   const bundles = await listBundles(db, { activeOnly: true });
   const giftable = bundles.filter((b) => b.giftable);
+  const [buyingAirtime, buyingData] = await getSettingValues(db, ["sellback.airtime_enabled", "sellback.data_enabled"] as const);
+  const buying = buyingAirtime || buyingData;
   const body = html`<h1>Airtime on one network. Use it on another.</h1>
     <p>Send airtime from your MTN, Airtel, Glo or 9mobile line to a number on a different network. You dial your own network's transfer code, we deliver the airtime on the other side, and a small fee comes out of the amount.</p>
     <ul class="facts">
@@ -146,6 +165,7 @@ async function homePage(db: pg.Pool, values: FormValues = {}, problem?: Html, st
       <li>From ${formatNaira(min)} to ${formatNaira(max)} per transfer.</li>
       <li>No account, no card, no app. Just your phone's dial pad.</li>
       ${bundles.length > 0 ? html`<li>The other side can get a data bundle instead of airtime${giftable.length > 0 ? ", and you can send a data bundle you hold" : ""}.</li>` : ""}
+      ${buying ? html`<li>Airtime or data you cannot use? <a href="/sell">We buy it back</a>.</li>` : ""}
     </ul>
     ${form(values, problem, giftable, bundles)}
     <h2 id="status">Check a transfer</h2>
@@ -163,11 +183,11 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
   const inBundle = t.in_bundle_id ? await getBundle(db, t.in_bundle_id) : undefined;
   const outBundle = t.out_bundle_id ? await getBundle(db, t.out_bundle_id) : undefined;
   const gets = outBundle ? `the bundle ${outBundle.name}` : `${formatNaira(t.payout_kobo ?? t.quoted_payout_kobo)} of airtime`;
-  const code = inBundle ? giftCodes[t.from_network] : codes[t.from_network];
-  const amountNaira = t.requested_kobo % 100 === 0 ? String(t.requested_kobo / 100) : (t.requested_kobo / 100).toFixed(2);
-  const dial = code ? code.replace("{amount}", amountNaira).replace("{number}", t.receiving_number).replace("{size}", inBundle ? inBundle.name : "") : "";
-  const needsPin = dial.includes("{pin}");
-  const shown = dial.replace("{pin}", "PIN");
+  const { dial, shown, needsPin } = dialInstruction(inBundle ? giftCodes[t.from_network] : codes[t.from_network], {
+    amountNaira: nairaDigits(t.requested_kobo),
+    number: t.receiving_number,
+    size: inBundle ? inBundle.name : "",
+  });
   const from = NAMES[t.from_network];
   const to = NAMES[t.to_network];
   const payout = formatNaira(t.payout_kobo ?? t.quoted_payout_kobo);
@@ -186,6 +206,7 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
           ? notice("problem", html`The time to send has passed. If you already sent the airtime, wait a few minutes and reload this page; it will still be matched. If not, <a href="/">start again</a>.`)
           : notice("info", html`Send before ${deadline} Lagos time, about ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"} from now. This page updates itself.`)}
         <h1>Now ${inBundle ? `gift the bundle ${inBundle.name}` : `send ${formatNaira(t.requested_kobo)} of ${from} airtime`} to <span class="big">${t.receiving_number}</span></h1>
+        <p><strong>${t.receiving_number} is our own ${from} number.</strong> Do not put ${mask(t.recipient_number)} in the code: ${from} cannot send airtime to another network, which is the whole reason we are in the middle. Send to us, and we pay ${to}.</p>
         <p>Use ${from}'s own ${inBundle ? "data gifting" : "airtime transfer"} from your line ${mask(t.sender_number)}. The recipient gets ${gets} on ${to} once it lands.${outBundle && !inBundle ? ` Send exactly ${formatNaira(t.requested_kobo)}: that covers the bundle's ${formatNaira(outBundle.price_kobo)} and the fee.` : ""}</p>
         ${dial
           ? html`<p class="dial-label">On your ${from} line, dial:</p>
