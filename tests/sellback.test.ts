@@ -8,7 +8,7 @@ import { runChecklist } from "../src/checklist.ts";
 import { openLots, writeOffExpired } from "../src/datalots.ts";
 import { balance, balances } from "../src/ledger.ts";
 import { naira } from "../src/money.ts";
-import { recordPayment } from "../src/orders.ts";
+import { refundOrder } from "../src/orders.ts";
 import { resetQuoteLimits } from "../src/public/pages.ts";
 import {
   blockSeller,
@@ -509,4 +509,45 @@ test("a message we bought value on is not left nagging in the unmatched list", a
   const list = await runChecklist(pool);
   assert.equal(list.filter((c) => c.title.includes("unmatched airtime")).length, 0, "nothing is reported as unmatched");
   assert.equal(list.filter((c) => c.status === "ok" && c.title === "All airtime received this week is matched").length, 1);
+});
+
+test("refunding an order paid with credit puts the value back on the code, and a stopped code keeps it", async () => {
+  const { sellback } = await sell();
+  await landed(naira(1_000));
+  const code = (await getSellbackByReference(pool, sellback.reference))!.credit_code!;
+  const b = new Browser(base);
+  const first = await b.post("/buy", { number: "08021234567", network: "AIRTEL", amount: "500", bundle: "", email: "" }, false);
+  await b.post(`${first.location}/credit`, { code }, false);
+  const order = (await pool.query("SELECT * FROM orders ORDER BY id DESC LIMIT 1")).rows[0];
+  assert.equal((await getCreditNote(pool, code))!.remaining_kobo, naira(300));
+  const refunded = await as("founder", (c) => refundOrder(c, "founder", order.id, "could not be delivered"));
+  assert.equal(refunded.state, "refunded");
+  const note = (await getCreditNote(pool, code))!;
+  assert.equal(note.remaining_kobo, naira(800), "the buyer can spend it again");
+  assert.equal(note.state, "open");
+  assert.equal(await balance(pool, "owed:sellers"), naira(800), "no cash left the bank");
+  assert.equal(await balance(pool, "cash:bank"), 0);
+  assert.ok(await booksBalance());
+
+  // A code we stopped on purpose cannot take a refund back.
+  const second = await b.post("/buy", { number: "08021234567", network: "AIRTEL", amount: "500", bundle: "", email: "" }, false);
+  await b.post(`${second.location}/credit`, { code }, false);
+  const paidAgain = (await pool.query("SELECT * FROM orders ORDER BY id DESC LIMIT 1")).rows[0];
+  await as("founder", (c) => voidCredit(c, "founder", code, "the airtime was not the seller's"));
+  const after = await as("founder", (c) => refundOrder(c, "founder", paidAgain.id, "could not be delivered"));
+  assert.equal(after.state, "refunded");
+  assert.equal((await getCreditNote(pool, code))!.remaining_kobo, 0, "nothing goes back onto a stopped code");
+  assert.equal(await balance(pool, "cash:bank"), 0, "and nothing is paid out in cash either");
+  assert.ok(await booksBalance());
+});
+
+test("the overview says what is owed to sellers and who is waiting on us", async () => {
+  await enableCash(naira(50_000), 24);
+  await sell({ outcome: "cash", bankDetails: "GTB 0123456789 Ada" });
+  await landed(naira(1_000));
+  const b = new Browser(base);
+  await b.login();
+  const page = await b.get("/admin");
+  assert.match(page.text, /Owed to sellers right now<\/div><div class="value">N800/);
+  assert.match(page.text, /Sellers waiting on us<\/div><div class="value">1/);
 });

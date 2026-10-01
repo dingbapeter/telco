@@ -177,6 +177,8 @@ const MUTATIONS: Mutation[] = [
   { name: "bought data recorded with the bundle's full validity", file: "src/sellbacks.ts", find: "    const validity = Math.min(assumed, bundle?.validity_days ?? assumed);", replace: "    const validity = bundle?.validity_days ?? assumed;", suite: "tests/sellback.test.ts" },
   { name: "margin on a purchase never booked", file: "src/sellbacks.ts", find: "  if (margin > 0) postings.push({ account: \"revenue:sellback_margin\", amountKobo: -margin });", replace: "", suite: "tests/sellback.test.ts" },
   { name: "the phone's record cannot hold what buying back answers", file: "migrations/0013_sellbacks.sql", find: "'recorded_by_hand', 'bought', 'bought_held'));", replace: "'recorded_by_hand'));", suite: "tests/sellback.test.ts" },
+  { name: "a refund of credit paid out in cash instead of back onto the code", file: "src/orders.ts", find: "  if (o.payment_method === \"credit\" && o.credit_code) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "a stopped credit code takes a refund back", file: "src/sellbacks.ts", find: "  if (!note || note.state === \"voided\") return undefined;", replace: "  if (!note) return undefined;", suite: "tests/sellback.test.ts" },
   { name: "phone numbers with a country code rejected", file: "src/phone.ts", find: "if (digits.length === 13 && digits.startsWith(\"234\")) local = \"0\" + digits.slice(3);", replace: "if (false) local = digits;", suite: "tests/phone.test.ts" },
 ];
 

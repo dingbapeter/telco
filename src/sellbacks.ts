@@ -381,6 +381,19 @@ export async function spendCredit(db: Client, codeText: string, amountKobo: numb
   return after[0]!;
 }
 
+// An order paid with a credit code is being refunded, so the value goes
+// back onto the code it came from. A code that has been stopped cannot be
+// put back: the caller is told, and books the refund where the stopped
+// money went instead.
+export async function restoreCredit(db: Client, codeText: string, amountKobo: number): Promise<CreditNote | undefined> {
+  const wanted = codeText.trim().toUpperCase();
+  const { rows } = await db.query<CreditNote>("SELECT * FROM credit_notes WHERE code = $1 FOR UPDATE", [wanted]);
+  const note = rows[0];
+  if (!note || note.state === "voided") return undefined;
+  const back = Math.min(note.amount_kobo, note.remaining_kobo + amountKobo);
+  return (await db.query<CreditNote>("UPDATE credit_notes SET remaining_kobo = $2, state = 'open' WHERE code = $1 RETURNING *", [wanted, back])).rows[0]!;
+}
+
 export async function releaseSellback(db: Client, actor: string, id: number): Promise<Sellback> {
   const s = (await db.query<Sellback>("SELECT * FROM sellbacks WHERE id = $1 FOR UPDATE", [id])).rows[0];
   if (!s) throw new UserFacingError("no_such_sellback", "There is no sale with that id.");

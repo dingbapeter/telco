@@ -4,6 +4,7 @@ import type { Queryable } from "./db.ts";
 import { agentPrice, chargeWallet } from "./agents.ts";
 import { activeBundle, type Bundle } from "./bundles.ts";
 import { consumeLots } from "./datalots.ts";
+import { restoreCredit } from "./sellbacks.ts";
 import { UserFacingError } from "./errors.ts";
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { applyBasisPoints, assertKobo, formatNaira } from "./money.ts";
@@ -257,6 +258,14 @@ export async function refundOrder(db: Client, actor: string, orderId: number, re
   if (o.paid_kobo === null) throw new UserFacingError("not_paid", "Nothing was paid on this order, so there is nothing to refund.");
   // Money that came from an agent's wallet goes back to that wallet.
   if (o.payment_method === "wallet" && o.agent_id) cashAccount = `agent:${o.agent_id}`;
+  // Money that came off a credit code goes back onto it, so a refunded
+  // purchase leaves the buyer able to spend it again rather than waiting on
+  // a bank transfer. A code that has since been stopped cannot take it
+  // back, so it goes where the stopped money went.
+  if (o.payment_method === "credit" && o.credit_code) {
+    const restored = await restoreCredit(db, o.credit_code, o.paid_kobo);
+    cashAccount = restored ? "owed:sellers" : "revenue:voided_credit";
+  }
   const moved = await claim(db, o.id, ["paid", "delivery_failed", "held"], "refunded", { refunded_kobo: o.paid_kobo, refund_reference: reference, refunded_at: new Date() });
   if (!moved) throw new UserFacingError("cannot_refund", `An order that is ${o.state.replaceAll("_", " ")} cannot be refunded.`);
   await postJournal(db, {

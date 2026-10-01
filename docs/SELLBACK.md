@@ -152,5 +152,9 @@ Beyond the settings:
   transfer wins, because somebody is waiting on the other side of it.
 - **We cannot sell the data on.** It expires and the loss is posted. Watch
   the Pools page and the checklist, which warns two days before.
+- **An order paid with credit has to be refunded.** The value goes back
+  onto the code the buyer used, so they can spend it again at once, and no
+  cash leaves the bank. A code that has been stopped cannot take it back,
+  and the refund stays where the stopped money went.
 - **A seller says they never got their cash.** The bank reference is on the
   sale, and the sale is in the audit log with who settled it.

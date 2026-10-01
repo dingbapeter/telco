@@ -9,7 +9,7 @@ const START_OF_TODAY = "(date_trunc('day', now() AT TIME ZONE 'Africa/Lagos') AT
 
 // Every number on this page is a query run when the page is opened.
 export async function liveNumbers(db: pg.Pool) {
-  const [ledger, today, states, unmatched, floors] = await Promise.all([
+  const [ledger, today, states, unmatched, sales, floors] = await Promise.all([
     balances(db),
     db.query<{ transfers: number; volume: number; fees: number }>(
       `SELECT count(*) FILTER (WHERE state = 'completed')::int AS transfers,
@@ -19,6 +19,7 @@ export async function liveNumbers(db: pg.Pool) {
     ),
     db.query<{ state: string; n: number }>("SELECT state, count(*)::int AS n FROM transfers GROUP BY state"),
     db.query<{ n: number }>("SELECT count(*)::int AS n FROM inbound_notifications WHERE matched_transfer_id IS NULL AND matched_sellback_id IS NULL"),
+    db.query<{ waiting: number; held: number }>("SELECT count(*) FILTER (WHERE state = 'received' AND outcome = 'cash')::int AS waiting, count(*) FILTER (WHERE state = 'held')::int AS held FROM sellbacks"),
     getSettingValue(db, "pool.floor_kobo"),
   ]);
   const byCode = Object.fromEntries(ledger.map((a) => [a.code, a.balanceKobo]));
@@ -33,6 +34,9 @@ export async function liveNumbers(db: pg.Pool) {
     inFlight: (stateCount["inbound_confirmed"] ?? 0) + (stateCount["paying_out"] ?? 0) + (stateCount["refunding"] ?? 0),
     waitingForAirtime: stateCount["awaiting_inbound"] ?? 0,
     unmatched: unmatched.rows[0]!.n,
+    owedToSellers: byCode["owed:sellers"] ?? 0,
+    sellersWaitingForCash: sales.rows[0]!.waiting,
+    salesHeld: sales.rows[0]!.held,
     stateCount,
   };
 }
@@ -55,6 +59,8 @@ export function registerOverview(app: App): void {
         <div class="card"><div class="label">Our fees today</div><div class="value">${money(n.today.fees)}</div></div>
         <div class="card"><div class="label">Our fees, all time</div><div class="value">${money(n.revenueAllTime)}</div></div>
         <div class="card ${n.owedToSenders > 0 ? "" : "ok"}"><div class="label">Owed to senders right now</div><div class="value">${money(n.owedToSenders)}</div></div>
+        <div class="card ${n.owedToSellers > 0 ? "" : "ok"}"><div class="label">Owed to sellers right now</div><div class="value">${money(n.owedToSellers)}</div><a href="/admin/sellbacks">Buying back</a></div>
+        <div class="card ${n.sellersWaitingForCash + n.salesHeld > 0 ? "bad" : "ok"}"><div class="label">Sellers waiting on us</div><div class="value">${n.sellersWaitingForCash + n.salesHeld}</div><a href="/admin/sellbacks">${n.sellersWaitingForCash} for cash, ${n.salesHeld} held</a></div>
       </div>
       <h2>Pools</h2>
       <div class="cards">

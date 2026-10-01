@@ -386,6 +386,8 @@ Checked on 1 October 2026.
 | Margin on a purchase never booked | Red |
 | The phone's record unable to hold what buying back answers | Red |
 | A sale paid twice, with both defences off | Red |
+| A refund of credit paid out in cash instead of back onto the code | Red |
+| A stopped credit code taking a refund back | Red |
 
 Two of these were real faults, found by the suite rather than by a
 mutation. The phone bridge keeps its own record of what became of every
