@@ -10,4 +10,5 @@ coverage/
 *.log
 .DS_Store
 browser-shots/
+phone-screens/
 browser-shots.server.log
