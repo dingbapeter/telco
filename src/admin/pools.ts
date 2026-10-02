@@ -20,9 +20,10 @@ const FUNDABLE = [
   { code: "wallet:vtpass", label: "Provider wallet" },
   { code: "cash:bank", label: "Bank account" },
   { code: "cash:paystack", label: "Paystack balance" },
+  { code: "cash:flutterwave", label: "Flutterwave balance" },
 ];
 const FUNDABLE_MEANING =
-  "A network pool is airtime on our SIM for that network. The provider wallet is money held with VTpass. The bank account and the Paystack balance are money.";
+  "A network pool is airtime on our SIM for that network. The provider wallet is money held with VTpass. The bank account and a gateway balance are money held for us until the gateway settles it.";
 
 async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200): Promise<{ kind: "html"; status: number; body: string }> {
   const [all, journals] = await Promise.all([

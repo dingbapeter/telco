@@ -7,11 +7,12 @@ overfull pool back into cash, and it is a second line of revenue.
 
 The buyer opens the Buy airtime page, gives a number, its network and an
 amount, and sees the price. The price is the face value less any discount
-you have set for that network. They pay online through Paystack, by card,
-bank transfer or USSD, or by transferring to the bank account you enter
-in Settings, with the order reference in the narration. Once the money is
-in, the airtime is delivered: through the provider automatically, or from
-our SIM by hand from the order page.
+you have set for that network. They pay online through the card gateway, by
+card, bank transfer or USSD, or by transferring to the bank account you enter
+in Settings, with the order reference in the narration, or with a credit code
+from having sold us airtime. Once the money is in, the airtime is delivered:
+through the provider automatically, or from our SIM by hand from the order
+page.
 
 ## Draining a pool
 
@@ -28,40 +29,86 @@ from our own SIM, either by a person from the order page or by the sending
 phone dialling the network's own code, which is set per network under
 Settings, Guardrails. See docs/BRIDGE.md.
 
+## The card gateway
+
+Two are supported and the product knows about neither: pages ask whichever
+gateway has its keys on the server for a page to send the buyer to, and read
+the result back from that gateway before a naira is booked.
+
+**Flutterwave** is the one in use when `FLUTTERWAVE_SECRET_KEY` is on the
+server. It takes cards issued outside Nigeria as well as Nigerian ones, which
+is why it was chosen: somebody in London can top up a line in Lagos, their
+bank does the conversion, and we are settled in naira.
+
+**Paystack** is used when Flutterwave's key is absent and its own is present.
+It is kept rather than deleted, because a gateway nobody is using takes no
+money and costs nothing to keep. With both keys set, Flutterwave is used.
+
+Each holds its own balance in the books, because each settles to the bank
+separately, and the Pools page lists both.
+
+Three differences between them live in the adapters and nowhere else, because
+each is a way to lose money quietly:
+
+- **Flutterwave works in naira, Paystack in kobo.** A kobo figure sent as
+  naira charges a hundred times too much. Both conversions are one function
+  with a test of its own.
+- **Flutterwave calls a settled charge "successful", Paystack "success".**
+- **Flutterwave's webhook header is a fixed secret you choose, not a signature
+  over the message.** Anybody who ever saw one header could forge a body
+  saying any amount. So no webhook's figures are believed from any gateway:
+  the amount is always read back from the gateway by our own reference. This
+  is the same rule the airtime side follows about network messages.
+
+A charge that comes back in any currency but naira is not booked at all. We
+price in naira and ask for naira, so another currency means the figures do not
+mean what the rest of the system assumes, and that is for a person to look at.
+
 ## Setting up
 
 1. Under Settings, Retail top-up, enter the bank details for transfers if
    you want to offer them. Bank transfers are confirmed by hand on the
    order page when you see them on the statement.
-2. For online payment, open a Paystack account at paystack.com, get the
-   secret key, put it in `/etc/telco/telco.env` as `PAYSTACK_SECRET_KEY`,
-   and restart the service. In Paystack's settings, set the webhook address
-   to `https://your.domain/payments/paystack/webhook`. The launch
-   checklist knocks on Paystack and says whether it answers. Test keys
-   are flagged on the checklist so you cannot forget to switch.
-3. Turn selling on under Settings, Retail top-up. The checklist goes red
-   if selling is on with no way to pay.
+2. For online payment, open a Flutterwave account at flutterwave.com, get the
+   secret key, and put it in `/etc/telco/telco.env` as
+   `FLUTTERWAVE_SECRET_KEY` yourself, then restart the service. **The key is
+   never pasted into a chat, a commit or a log.**
+3. In Flutterwave under Settings, Webhooks, set the address to
+   `https://your.domain/payments/flutterwave/webhook` and type a long random
+   secret hash. Put the same secret in the environment file as
+   `FLUTTERWAVE_WEBHOOK_SECRET`. Without it no webhook is believed, which is
+   safe but means a buyer who closes the tab before coming back waits for
+   somebody to look. The checklist says so in those words.
+4. Turn selling on under Settings, Retail top-up. The checklist goes red
+   if selling is on with no way to pay, knocks on the gateway, reads its
+   balance, and warns while the keys are test keys.
+
+The adapter is built against Flutterwave's version 3 interface, which is what
+their production integrations use. They have a version 4 in public beta with a
+different way of signing in; moving to it is a job of its own and nothing here
+forces it.
 
 ## How the money is booked
 
 - A payment credits the money owed to buyers and debits the bank or the
-  Paystack balance, net of Paystack's fee, which is its own expense line.
+  gateway's balance, net of the gateway's fee, which is its own expense line.
 - A delivery from our SIM debits the buyer's money and the discount and
   credits the pool by the face value.
 - A delivery through the provider credits the provider wallet by what the
   provider charged and books their commission as revenue.
 - A refund is a bank transfer you make, recorded on the order page; it
   debits the money owed to the buyer and credits the bank.
-- Paystack settles to your bank on its own schedule. Record each
-  settlement under Pools as money lost from Paystack and added to the
-  bank, and the checklist will stop warning that the two disagree.
+- A gateway settles to your bank on its own schedule. Record each settlement
+  under Pools as money lost from that gateway's balance and added to the bank,
+  and the checklist will stop warning that the two disagree.
 
 ## What can go wrong
 
 - **Underpaid bank transfer.** The order is held and can only be refunded.
 - **A webhook arrives twice, or a buyer refreshes the return page.** The
   payment is recorded once; the second time does nothing.
-- **A forged webhook.** Refused: the signature must match your secret key.
+- **A forged webhook.** Refused: the signature or secret must match. And even
+  a real one is only a nudge to go and ask the gateway what really happened.
 - **Delivery fails.** Same as transfers: retried with a wait through the
   provider, or left for a person with the provider's words on the order
   page. The buyer's page says a person is looking and nothing is lost.

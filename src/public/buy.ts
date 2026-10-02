@@ -5,7 +5,7 @@ import { UserFacingError } from "../errors.ts";
 import { formatNaira, parseNaira } from "../money.ts";
 import { createOrder, getOrderByReference, priceFor, recordPayment, type Order } from "../orders.ts";
 import { getCreditNote, spendCredit } from "../sellbacks.ts";
-import type { PaystackProvider } from "../payments/paystack.ts";
+import type { PaymentGateway, Verification } from "../payments/gateway.ts";
 import { getSettingValues, NETWORK_CODES, type NetworkCode } from "../settings.ts";
 import { html, notice, type Html } from "../web/html.ts";
 import type { App, Response } from "../web/http.ts";
@@ -14,7 +14,7 @@ import { topUpWallet } from "../agents.ts";
 
 const NAMES: Record<NetworkCode, string> = { MTN: "MTN", AIRTEL: "Airtel", GLO: "Glo", "9MOBILE": "9mobile" };
 
-export type PaymentOptions = { paystack?: PaystackProvider | undefined; publicBaseUrl: string };
+export type PaymentOptions = { gateway?: PaymentGateway | undefined; publicBaseUrl: string };
 
 type Values = { network?: string; number?: string; amount?: string; email?: string; bundle?: string };
 
@@ -66,24 +66,24 @@ async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message
         ${expired ? notice("problem", html`The time to pay has passed. If you already paid by bank transfer, it will still be matched when it arrives. Otherwise <a href="/buy">start again</a>.`) : ""}
         <h1>Pay ${formatNaira(o.price_kobo)} for ${item}</h1>
         <p>For ${mask(o.recipient_number)}.${o.discount_kobo > 0 ? ` That is ${formatNaira(o.discount_kobo)} off.` : ""}</p>
-        ${options.paystack && !expired
+        ${options.gateway && !expired
           ? html`<form method="post" action="/o/${o.reference}/pay"><button type="submit">Pay ${formatNaira(o.price_kobo)} by card, bank or USSD</button></form>
-            <p class="muted">You will be taken to Paystack, who handle the payment, and brought back here.</p>`
+            <p class="muted">You will be taken to ${options.gateway.label}, who handle the payment, and brought back here. A card from outside Nigeria works; your bank does the conversion.</p>`
           : ""}
         ${bank
-          ? html`<h2>${options.paystack && !expired ? "Or pay by bank transfer" : "Pay by bank transfer"}</h2>
+          ? html`<h2>${options.gateway && !expired ? "Or pay by bank transfer" : "Pay by bank transfer"}</h2>
             <p>Transfer exactly <strong>${formatNaira(o.price_kobo)}</strong> to:</p>
             <dl class="ref"><dt>Bank</dt><dd>${bank.bankName}</dd><dt>Account number</dt><dd><strong>${bank.accountNumber}</strong></dd><dt>Account name</dt><dd>${bank.accountName}</dd><dt>Narration or remark</dt><dd><strong>${o.reference}</strong></dd></dl>
             <p>Put the reference in the narration so we can match your transfer. We confirm bank transfers by hand during the day, so this can take a little longer than paying online.</p>`
           : ""}
         ${expired
           ? ""
-          : html`<h2>${options.paystack || bank ? "Or pay with a credit code" : "Pay with a credit code"}</h2>
+          : html`<h2>${options.gateway || bank ? "Or pay with a credit code" : "Pay with a credit code"}</h2>
             <p>If you have sold us airtime or data, the code we gave you can pay for this.</p>
             <form method="post" action="/o/${o.reference}/credit" class="panel">
               <div class="field"><label for="code">Your credit code</label><input id="code" name="code" type="text" required autocapitalize="characters" placeholder="CR-ABCD234567"></div>
               <button type="submit" class="secondary">Pay ${formatNaira(o.price_kobo)} with my credit</button></form>`}
-        ${!options.paystack && !bank ? notice("info", "Paying by card or bank transfer is not set up yet. A credit code still works.") : ""}`;
+        ${!options.gateway && !bank ? notice("info", "Paying by card or bank transfer is not set up yet. A credit code still works.") : ""}`;
       refresh = 30;
       break;
     }
@@ -177,56 +177,62 @@ export function registerBuy(app: App, options: PaymentOptions): void {
     false,
   );
 
-  // Sends the buyer to Paystack. Our order reference is Paystack's too, so
-  // whatever comes back can be matched without a lookup table.
+  // Sends the buyer to the gateway. Our own reference is the gateway's too,
+  // so whatever comes back can be matched without a lookup table.
   app.post(
     "/o/:reference/pay",
     async (req, db) => {
       const o = await getOrderByReference(db, req.query.get("reference") ?? "");
       if (!o) return { kind: "redirect", to: "/buy" };
-      if (!options.paystack) return orderPage(db, o, options, notice("problem", "Paying online is not set up. Use the bank transfer details below."));
+      const gateway = options.gateway;
+      if (!gateway) return orderPage(db, o, options, notice("problem", "Paying online is not set up. Use the bank transfer details below."));
       if (o.state !== "awaiting_payment") return { kind: "redirect", to: `/o/${o.reference}` };
       try {
-        const { url } = await options.paystack.initialize({
+        const { url } = await gateway.initialize({
           reference: o.reference,
           amountKobo: o.price_kobo,
           email: o.buyer_email ?? `buyer-${o.recipient_number}@${new URL(options.publicBaseUrl).hostname}`,
-          callbackUrl: `${options.publicBaseUrl}/payments/paystack/callback`,
+          callbackUrl: `${options.publicBaseUrl}/payments/${gateway.name}/callback`,
         });
         return { kind: "redirect", to: url };
       } catch (err) {
         // The reason is for us, not for the visitor: it can name the
-        // provider, the address we call and part of their answer.
-        console.error("paystack initialize failed", err);
+        // gateway, the address we call and part of their answer.
+        console.error(`${gateway.name} initialize failed`, err);
         return orderPage(db, o, options, notice("problem", "Paying online did not start. Try again in a minute, or pay by bank transfer below."));
       }
     },
     false,
   );
 
-  // The buyer comes back from Paystack. The redirect proves nothing; the
-  // result is read from Paystack before anything is recorded.
+  // The buyer comes back from the gateway. The redirect proves nothing, and
+  // neither do the figures in it: the result is read from the gateway itself
+  // before anything is recorded. Paystack sends the reference back as
+  // "reference" or "trxref", Flutterwave as "tx_ref".
   app.get(
-    "/payments/paystack/callback",
+    "/payments/:provider/callback",
     async (req, db) => {
-      const reference = req.query.get("reference") ?? req.query.get("trxref") ?? "";
+      const gateway = options.gateway;
+      if (!gateway || req.query.get("provider") !== gateway.name) return { kind: "redirect", to: "/buy" };
+      const reference = req.query.get("reference") ?? req.query.get("trxref") ?? req.query.get("tx_ref") ?? "";
       if (reference.toUpperCase().startsWith("AT-")) {
-        // Only ask Paystack about a top-up we are actually waiting on.
-        // Otherwise anyone could make the server call Paystack all day by
-        // inventing references, and use up the rate limit real payments need.
+        // Only ask the gateway about a top-up we are actually waiting on.
+        // Otherwise anyone could make the server call it all day by inventing
+        // references, and use up the rate limit real payments need.
         const waiting = await db.query("SELECT 1 FROM agent_topups WHERE reference = $1 AND state = 'started'", [reference.toUpperCase()]);
-        if (options.paystack && waiting.rowCount) {
-          const v = await options.paystack.verify(reference.toUpperCase());
-          if (v.status === "success") await settleAgentTopUp(db, reference.toUpperCase(), v.amountKobo, v.feesKobo, options.paystack.cashAccount);
+        if (waiting.rowCount) {
+          const v = await gateway.verify(reference.toUpperCase());
+          if (v.status === "success" && inNaira(v, gateway)) await settleAgentTopUp(db, reference.toUpperCase(), v.amountKobo, v.feesKobo, gateway);
         }
         return { kind: "redirect", to: "/agent/topup" };
       }
       const o = await getOrderByReference(db, reference);
       if (!o) return { kind: "redirect", to: "/buy" };
-      if (options.paystack && o.state === "awaiting_payment") {
-        const v = await options.paystack.verify(o.reference);
-        if (v.status === "success") {
-          await withActor("paystack:callback", (c) => recordPayment(c, "paystack:callback", o.id, { method: "paystack", reference: v.reference, paidKobo: v.amountKobo, feeKobo: v.feesKobo, cashAccount: options.paystack!.cashAccount }), db);
+      if (o.state === "awaiting_payment") {
+        const v = await gateway.verify(o.reference);
+        if (v.status === "success" && inNaira(v, gateway)) {
+          const actor = `${gateway.name}:callback`;
+          await withActor(actor, (c) => recordPayment(c, actor, o.id, { method: gateway.name, reference: v.reference, paidKobo: v.amountKobo, feeKobo: v.feesKobo, cashAccount: gateway.cashAccount }), db);
         }
       }
       return { kind: "redirect", to: `/o/${o.reference}` };
@@ -234,38 +240,36 @@ export function registerBuy(app: App, options: PaymentOptions): void {
     false,
   );
 
-  // Paystack tells us a charge settled. Believed only with a valid
-  // signature, recorded once per event, and never re-booked.
+  // The gateway tells us a charge settled. Three things happen before a naira
+  // moves: the signature has to be right, the event is recorded once so the
+  // same one cannot be acted on twice, and the amount is read back from the
+  // gateway rather than believed from the body.
+  //
+  // That last one is not caution for its own sake. Flutterwave's header is a
+  // fixed secret we chose, not a signature over the body, so anybody who ever
+  // sees one header could otherwise post any figure they liked.
   app.post(
-    "/payments/paystack/webhook",
+    "/payments/:provider/webhook",
     async (req, db) => {
-      if (!options.paystack) return { kind: "json", status: 404, body: { error: "Paystack is not set up." } };
-      if (!options.paystack.verifySignature(req.rawBody, req.raw.headers["x-paystack-signature"] as string | undefined)) {
+      const gateway = options.gateway;
+      if (!gateway || req.query.get("provider") !== gateway.name) return { kind: "json", status: 404, body: { error: "No payment gateway is set up for that address." } };
+      const sent = gateway.signatureHeaders.map((h) => req.raw.headers[h]).find((v) => typeof v === "string") as string | undefined;
+      if (!gateway.verifySignature(req.rawBody, sent)) {
         return { kind: "json", status: 401, body: { error: "The signature does not match." } };
       }
-      let event: { event?: string; data?: { reference?: string; amount?: number; fees?: number | null; status?: string } };
+      let read: { type: string; reference: string };
       try {
-        event = JSON.parse(req.rawBody) as typeof event;
+        read = gateway.readWebhook(req.rawBody);
       } catch {
         return { kind: "json", status: 400, body: { error: "The body is not JSON." } };
       }
-      const type = event.event ?? "";
-      const reference = event.data?.reference ?? "";
+      const { type, reference } = read;
       const inserted = await db.query<{ id: number }>(
-        "INSERT INTO payment_events (provider, event_type, provider_reference, payload) VALUES ('paystack', $1, $2, $3::jsonb) ON CONFLICT DO NOTHING RETURNING id",
-        [type, reference, req.rawBody],
+        "INSERT INTO payment_events (provider, event_type, provider_reference, payload) VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT DO NOTHING RETURNING id",
+        [gateway.name, type, reference, req.rawBody],
       );
       if (!inserted.rows[0]) return { kind: "json", body: { ok: true, outcome: "already seen" } };
-      let outcome = "ignored";
-      if (type === "charge.success" && reference.toUpperCase().startsWith("AT-")) {
-        outcome = (await settleAgentTopUp(db, reference.toUpperCase(), Number(event.data?.amount ?? 0), Number(event.data?.fees ?? 0), options.paystack.cashAccount)) ? "paid" : "already";
-      } else if (type === "charge.success" && reference) {
-        const o = await getOrderByReference(db, reference);
-        if (o) {
-          const r = await withActor("paystack:webhook", (c) => recordPayment(c, "paystack:webhook", o.id, { method: "paystack", reference, paidKobo: Number(event.data?.amount ?? 0), feeKobo: Number(event.data?.fees ?? 0), cashAccount: options.paystack!.cashAccount }), db);
-          outcome = r.outcome;
-        } else outcome = "no such order";
-      }
+      const outcome = await actOnWebhook(db, gateway, type, reference);
       await db.query("UPDATE payment_events SET outcome = $2 WHERE id = $1", [inserted.rows[0].id, outcome]);
       return { kind: "json", body: { ok: true, outcome } };
     },
@@ -273,13 +277,44 @@ export function registerBuy(app: App, options: PaymentOptions): void {
   );
 }
 
+// What a webhook means, once its reference is known. Only a charge that the
+// gateway itself confirms, in naira, moves money; everything else is recorded
+// with a word saying why it did not.
+async function actOnWebhook(db: pg.Pool, gateway: PaymentGateway, type: string, reference: string): Promise<string> {
+  // Refunds, chargebacks and the rest are kept and not acted on. Each would
+  // need its own thinking, and guessing at one is worse than waiting.
+  if (type !== "charge.success" && type !== "charge.completed") return "ignored";
+  if (!reference) return "no reference";
+  const upper = reference.toUpperCase();
+  const isTopUp = upper.startsWith("AT-");
+  const order = isTopUp ? undefined : await getOrderByReference(db, reference);
+  if (!isTopUp && !order) return "no such order";
+  const v = await gateway.verify(reference);
+  if (v.status !== "success") return `${gateway.label} says the charge is ${v.status}`;
+  if (!inNaira(v, gateway)) return `charged in ${v.currency}, not naira`;
+  if (isTopUp) return (await settleAgentTopUp(db, upper, v.amountKobo, v.feesKobo, gateway)) ? "paid" : "already";
+  const actor = `${gateway.name}:webhook`;
+  const r = await withActor(actor, (c) => recordPayment(c, actor, order!.id, { method: gateway.name, reference: v.reference, paidKobo: v.amountKobo, feeKobo: v.feesKobo, cashAccount: gateway.cashAccount }), db);
+  return r.outcome;
+}
+
+// We price in naira and ask the gateway for naira. A charge that comes back in
+// anything else is not booked: the figures would not mean what every other
+// part of this system assumes, and a wrong currency is a thing for a person to
+// look at rather than for code to convert on a guess.
+function inNaira(v: Verification, gateway: PaymentGateway): boolean {
+  if (v.currency === "NGN" || v.currency === "") return true;
+  console.error(`${gateway.name} charge ${v.reference} came back in ${v.currency}, not NGN; nothing was booked`);
+  return false;
+}
+
 // An agent's online wallet top-up has settled. Claims the top-up row once
 // and credits the wallet with what was actually paid.
-export async function settleAgentTopUp(db: pg.Pool, reference: string, paidKobo: number, feeKobo: number, cashAccount: string): Promise<boolean> {
-  return withActor("paystack", async (c) => {
+export async function settleAgentTopUp(db: pg.Pool, reference: string, paidKobo: number, feeKobo: number, gateway: PaymentGateway): Promise<boolean> {
+  return withActor(gateway.name, async (c) => {
     const row = (await c.query<{ agent_id: number }>("UPDATE agent_topups SET state = 'paid', paid_at = now() WHERE reference = $1 AND state = 'started' RETURNING agent_id", [reference])).rows[0];
     if (!row) return false;
-    await topUpWallet(c, row.agent_id, { reference, paidKobo, feeKobo, cashAccount, method: "paystack" });
+    await topUpWallet(c, row.agent_id, { reference, paidKobo, feeKobo, cashAccount: gateway.cashAccount, method: gateway.name });
     return true;
   }, db);
 }

@@ -19,14 +19,15 @@ import { registerSettings } from "./admin/settings.ts";
 import { registerTransfers } from "./admin/transfers.ts";
 import { registerAgentApi } from "./agent/api.ts";
 import { registerAgentPortal } from "./agent/portal.ts";
-import { paystackFromEnv, type PaystackProvider } from "./payments/paystack.ts";
+import { gatewayFromEnv } from "./payments/choose.ts";
+import type { PaymentGateway } from "./payments/gateway.ts";
 import { registerBuy } from "./public/buy.ts";
 import { registerPublic } from "./public/pages.ts";
 import { registerSell } from "./public/sell.ts";
 import { registerBridge } from "./web/bridge.ts";
 import { App } from "./web/http.ts";
 
-export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicBaseUrl?: string; paystack?: PaystackProvider | undefined }): App {
+export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicBaseUrl?: string; gateway?: PaymentGateway | undefined }): App {
   const app = new App(db, options.publicBaseUrl ?? "");
   app.get("/health", async (_req, pool) => {
     // Knocks on the database rather than reporting that a connection string exists.
@@ -53,11 +54,13 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicB
   registerSellbacksAdmin(app);
   registerPublic(app, options.secureCookies);
   registerSell(app);
-  const paystack = options.paystack ?? paystackFromEnv();
+  // Whichever card gateway has its keys on the server. The pages below know
+  // only that they have one, or that they have none.
+  const gateway = options.gateway ?? gatewayFromEnv();
   const publicBaseUrl = options.publicBaseUrl ?? "http://localhost:3000";
-  registerBuy(app, { paystack, publicBaseUrl });
+  registerBuy(app, { gateway, publicBaseUrl });
   registerAgentsAdmin(app);
-  registerAgentPortal(app, { paystack, publicBaseUrl, secureCookies: options.secureCookies });
+  registerAgentPortal(app, { gateway, publicBaseUrl, secureCookies: options.secureCookies });
   registerAgentApi(app);
   return app;
 }

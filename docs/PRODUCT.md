@@ -74,7 +74,8 @@ fee twenty:
 The fee becomes money two ways: a transfer in the other direction pays out
 of the pool, so opposite flows cost nothing and both fees stay with us;
 and selling the pool on the Buy airtime page, where a buyer pays cash and
-our MTN phone sends them MTN airtime. Cash in the bank and Paystack, less
+our MTN phone sends them MTN airtime. Cash in the bank and with the card
+gateway, less
 what went into the VTpass wallet and SIM float, is the business's money,
 and the Pools page shows every kobo of it.
 
@@ -189,7 +190,7 @@ Which code a person dials, and who makes each kind of code, is set out in
 docs/CODES.md. The short version: the airtime transfer codes belong to the
 networks and we only hold each one as a template with the PIN left for the
 phone; our references and agent codes are made here; a buyer paying us by
-USSD is using their own bank's code through Paystack; and a Telco short
+USSD is using their own bank's code through the card gateway; and a Telco short
 code waits on an aggregator contract, not on software.
 
 ## Who uses it

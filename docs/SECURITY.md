@@ -34,6 +34,16 @@ repository secrets at all, so there is nothing there to leak.
   in the database, and paying more than the price waits for a person.
 - **Money asked for is money spoken for.** An agent cannot spend what they
   have already asked to withdraw.
+- **A card gateway's message is never believed for its figures.** A webhook
+  or a buyer's return only says which reference to ask about; the amount and
+  the fee are read back from the gateway itself before anything is booked.
+  This matters most with Flutterwave, whose webhook header is a fixed secret
+  rather than a signature over the message, so one captured header would
+  otherwise let anybody post any figure. With no webhook secret set, no
+  webhook is believed at all.
+- **Money that is not naira is not booked.** We price in naira and ask the
+  gateway for naira. A charge that comes back in another currency waits for a
+  person instead of being converted on a guess.
 
 ## Who may do what
 

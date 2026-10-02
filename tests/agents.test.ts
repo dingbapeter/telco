@@ -19,7 +19,7 @@ let base = "";
 let server: Server;
 before(async () => {
   await ps.start();
-  const app = buildApp(pool, { secureCookies: false, publicBaseUrl: "https://telco.example", paystack: new PaystackProvider({ baseUrl: ps.base, secretKey: ps.secret }) });
+  const app = buildApp(pool, { secureCookies: false, publicBaseUrl: "https://telco.example", gateway: new PaystackProvider({ baseUrl: ps.base, secretKey: ps.secret }) });
   server = app.listen(0);
   await new Promise<void>((r) => server.once("listening", r));
   const a = server.address();

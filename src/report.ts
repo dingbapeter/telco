@@ -15,6 +15,7 @@ export type Line = { code: string; name: string; kobo: number };
 const SHORT: Record<string, string> = {
   "cash:bank": "Our bank account",
   "cash:paystack": "Held by Paystack",
+  "cash:flutterwave": "Held by Flutterwave",
   "wallet:vtpass": "Provider wallet",
   "owed:senders": "Senders not yet paid out",
   "owed:buyers": "Buyers not yet delivered",

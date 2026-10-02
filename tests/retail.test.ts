@@ -25,7 +25,7 @@ before(async () => {
   await ps.start();
   await vt.start();
   paystack = new PaystackProvider({ baseUrl: ps.base, secretKey: ps.secret });
-  const app = buildApp(pool, { secureCookies: false, publicBaseUrl: "https://telco.example", paystack });
+  const app = buildApp(pool, { secureCookies: false, publicBaseUrl: "https://telco.example", gateway: paystack });
   server = app.listen(0);
   await new Promise<void>((r) => server.once("listening", r));
   const a = server.address();
@@ -205,17 +205,29 @@ async function webhook(body: string, signature: string) {
 
 test("a webhook is believed only with a valid signature, and the same event twice books once", async () => {
   const o = await order(500);
-  const body = JSON.stringify({ event: "charge.success", data: { reference: o.reference, amount: naira(500), fees: 750, status: "success" } });
+  // The body claims more than was really paid. What gets booked is what the
+  // gateway itself confirms when asked, never the figure in the message.
+  const body = JSON.stringify({ event: "charge.success", data: { reference: o.reference, amount: naira(5_000), fees: 0, status: "success" } });
   const forged = await webhook(body, ps.sign(body, "sk_test_wrong"));
   assert.equal(forged.status, 401);
   assert.equal((await getOrder(pool, o.id))!.state, "awaiting_payment");
+  ps.verifications.set(o.reference, { status: "success", amount: naira(500), fees: 750, channel: "card" });
   const real = await webhook(body, ps.sign(body));
   assert.equal(real.status, 200);
   assert.deepEqual(await real.json(), { ok: true, outcome: "paid" });
   const again = await webhook(body, ps.sign(body));
   assert.deepEqual(await again.json(), { ok: true, outcome: "already seen" });
-  assert.equal(await balance(pool, "owed:buyers"), naira(500));
+  assert.equal(await balance(pool, "owed:buyers"), naira(500), "the price, not the figure the message claimed");
+  assert.equal(await balance(pool, "cash:paystack"), naira(500) - 750);
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM payment_events")).rows[0].n, 1);
+});
+
+test("a webhook for a charge the gateway cannot confirm books nothing", async () => {
+  const o = await order(500);
+  const body = JSON.stringify({ event: "charge.success", data: { reference: o.reference, amount: naira(500), fees: 0, status: "success" } });
+  const r = await webhook(body, ps.sign(body));
+  assert.deepEqual(await r.json(), { ok: true, outcome: "Paystack says the charge is pending" });
+  assert.equal((await getOrder(pool, o.id))!.state, "awaiting_payment");
 });
 
 test("a webhook for an order nobody placed is recorded and ignored", async () => {

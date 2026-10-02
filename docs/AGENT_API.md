@@ -126,7 +126,7 @@ same list rather than buying it a second time.
 
 ## What it deliberately does not do
 
-- It does not top up the wallet. Money in is by bank transfer or Paystack,
+- It does not top up the wallet. Money in is by bank transfer or card,
   through the portal, so there is one path for money and it is the one a
   person can read in the ledger.
 - It does not withdraw. A withdrawal is a request a person settles.

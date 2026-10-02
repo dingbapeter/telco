@@ -672,6 +672,43 @@ nothing ever waits, the second counts a day that is still empty, and the test
 goes red. Written down because a concurrency test that cannot fail is worse
 than no test: it reads like a guarantee.
 
+## Card gateway suite (`tests/flutterwave.test.ts`)
+
+Drives taking money through Flutterwave, which the founder chose because it
+accepts cards issued outside Nigeria. Checked on 2 October 2026. Every test
+here is about one of the three ways it differs from the gateway built first,
+because each difference is a way to book the wrong amount.
+
+| Breakage introduced | Result |
+| --- | --- |
+| Kobo sent to a gateway that works in naira, charging a hundred times too much | Red |
+| Naira read back as though it were kobo, or a fee read the same way | Red, one test each |
+| A figure that is not a number guessed at rather than treated as nothing | Red |
+| Half a kobo charged as a whole one | Red |
+| The word Flutterwave uses for a settled charge not understood | Red |
+| A webhook believed whatever secret it carries | Red |
+| A refund or chargeback message treated as a payment | Red |
+| A charge the gateway never confirmed booked anyway | Red |
+| The figures believed from the message instead of read back from the gateway | Red |
+| Money taken in another currency booked as though it were naira | Red |
+| One gateway's webhook address answering for another | Red |
+| The gateway whose keys are on the server not the one used | Red |
+
+The units are the test worth reading twice. A price of five hundred naira is
+50,000 kobo here and `500.00` to Flutterwave, and a price with kobo in it,
+1,234.56 naira, is 123,456 kobo. Sending one where the other is meant is a
+factor of a hundred in a real charge, so the conversion is one function with
+its own test, in both directions, including what to do with a figure that is
+not a number at all: nothing, rather than a guess at somebody's money.
+
+The webhook rule changed for both gateways while this was built. Paystack signs
+the body, so its figures could be trusted once the signature matched.
+Flutterwave's header is a fixed secret we choose, so it proves the sender knew
+the secret and nothing at all about the figures. Rather than have two rules,
+neither gateway's message is believed: every one of them is just a reference to
+go and ask about. The retail suite now proves that too, with a message claiming
+ten times the price and the price being what gets booked.
+
 ## Security review (20 September 2026)
 
 Four readings of the whole code in parallel: the way people sign in, the

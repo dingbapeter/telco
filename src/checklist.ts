@@ -6,7 +6,7 @@ import { listMigrations } from "./migrate.ts";
 import { getSetting, getSettingValue, getSettingValues, NETWORK_CODES, SETTINGS } from "./settings.ts";
 import { STALE_AFTER_MINUTES } from "./admin/bridge.ts";
 import { expiringSoon } from "./datalots.ts";
-import { paystackFromEnv } from "./payments/paystack.ts";
+import { gatewayFromEnv } from "./payments/choose.ts";
 import { describeDifference, latestChecks } from "./balances.ts";
 import { percentOf, rateFor } from "./sellbacks.ts";
 import { railFromEnv } from "./rails/rail.ts";
@@ -200,23 +200,53 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
   }
 
   const [retail, bankName, bankNumber, bankAccount] = await getSettingValues(db, ["retail.enabled", "retail.bank_name", "retail.bank_account_number", "retail.bank_account_name"] as const);
-  const paystack = paystackFromEnv(env);
+  const gateway = gatewayFromEnv(env);
   const bankReady = bankName !== "" && bankNumber !== "" && bankAccount !== "";
+  const keyName = gateway?.name === "flutterwave" ? "FLUTTERWAVE_SECRET_KEY" : "PAYSTACK_SECRET_KEY";
   if (retail) {
-    if (!paystack && !bankReady) {
-      checks.push({ status: "bad", title: "Airtime is for sale but nobody can pay", detail: "Retail is on with neither bank details nor Paystack keys.", fix: "Command centre, Settings, Retail top-up: enter the bank details, or put PAYSTACK_SECRET_KEY in /etc/telco/telco.env and restart, or turn retail off." });
+    if (!gateway && !bankReady) {
+      checks.push({
+        status: "bad",
+        title: "Airtime is for sale but nobody can pay",
+        detail: "Retail is on with neither bank details nor the keys for a card gateway.",
+        fix: "Command centre, Settings, Retail top-up: enter the bank details, or put FLUTTERWAVE_SECRET_KEY in /etc/telco/telco.env and restart, or turn retail off.",
+      });
     } else {
-      checks.push({ status: "ok", title: "Buyers can pay", detail: [paystack ? "online through Paystack" : "", bankReady ? "by bank transfer" : ""].filter(Boolean).join(" and ") + "." });
+      checks.push({ status: "ok", title: "Buyers can pay", detail: [gateway ? `online through ${gateway.label}` : "", bankReady ? "by bank transfer" : ""].filter(Boolean).join(" and ") + "." });
     }
   } else {
     checks.push({ status: "warn", title: "Airtime is not for sale", detail: "The Buy airtime page is closed, so an overfull pool cannot be turned back into cash.", fix: "Command centre, Settings, Retail top-up: turn selling on once a way to pay is set up." });
   }
-  if (paystack) {
-    const h = await paystack.health();
-    checks.push(h.ok ? { status: h.message.includes("test keys") ? "warn" : "ok", title: "Paystack answers", detail: h.message, ...(h.message.includes("test keys") ? { fix: "Put the live secret key in /etc/telco/telco.env before selling for real money." } : {}) } : { status: "bad", title: "Paystack is not working", detail: h.message, fix: "Check PAYSTACK_SECRET_KEY in /etc/telco/telco.env and restart the service." });
-    const ledgerCash = await balance(db, paystack.cashAccount);
+  if (gateway) {
+    const h = await gateway.health();
+    checks.push(
+      h.ok
+        ? {
+            status: h.message.includes("test keys") ? "warn" : "ok",
+            title: `${gateway.label} answers`,
+            detail: h.message,
+            ...(h.message.includes("test keys") ? { fix: `Put the live secret key in /etc/telco/telco.env as ${keyName} before selling for real money.` } : {}),
+          }
+        : { status: "bad", title: `${gateway.label} is not working`, detail: h.message, fix: `Check ${keyName} in /etc/telco/telco.env and restart the service.` },
+    );
+    // A webhook nobody can believe is the difference between a buyer who
+    // closed the tab being credited and being left to complain.
+    if (gateway.name === "flutterwave" && h.message.includes("No webhook secret")) {
+      checks.push({
+        status: "warn",
+        title: "Flutterwave webhooks are not believed",
+        detail: "No webhook secret is set, so a buyer who pays and closes the tab is not credited until somebody looks at the gateway.",
+        fix: "In the Flutterwave dashboard under Settings, Webhooks, set the address to /payments/flutterwave/webhook and a long secret hash, then put the same secret in /etc/telco/telco.env as FLUTTERWAVE_WEBHOOK_SECRET and restart.",
+      });
+    }
+    const ledgerCash = await balance(db, gateway.cashAccount);
     if (h.balanceKobo !== undefined && Math.abs(h.balanceKobo - ledgerCash) > 100) {
-      checks.push({ status: "warn", title: "Paystack balance and our ledger disagree", detail: `Paystack reports ${formatNaira(h.balanceKobo)}; our ledger has ${formatNaira(ledgerCash)}.`, fix: "Paystack settles to the bank on its own schedule. Under Pools, record each settlement as money lost from Paystack and added to the bank." });
+      checks.push({
+        status: "warn",
+        title: `${gateway.label} balance and our ledger disagree`,
+        detail: `${gateway.label} reports ${formatNaira(h.balanceKobo)}; our ledger has ${formatNaira(ledgerCash)}.`,
+        fix: `${gateway.label} settles to the bank on its own schedule. Under Pools, record each settlement as money lost from ${gateway.label} and added to the bank.`,
+      });
     }
   }
   const [agentsOn] = await getSettingValues(db, ["agent.enabled"] as const);

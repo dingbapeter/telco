@@ -9,7 +9,7 @@ which move volume in Nigeria:
   fee, paid into the agent's wallet the moment the transfer completes. The
   share is a setting.
 - **A prepaid wallet.** The agent pays money in, by bank transfer recorded
-  by you or online through Paystack, and buys airtime and bundles for
+  by you or online by card, and buys airtime and bundles for
   walk-in customers from it at a discount, which is also a setting. The
   order is paid at once and delivered like any other. A wallet purchase
   that has to be refunded goes back to the wallet.

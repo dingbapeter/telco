@@ -11,7 +11,7 @@ books.
 ## What is ours right now
 
 - **What we hold.** Airtime in each network's pool, data in each data pool
-  at the price we sell it for, money in the bank, money Paystack is holding
+  at the price we sell it for, money in the bank, money a card gateway is holding
   for us, and the provider's wallet.
 - **What we owe.** Senders whose airtime has arrived and not yet been paid
   out, buyers who have paid and not yet been delivered, sellers we have

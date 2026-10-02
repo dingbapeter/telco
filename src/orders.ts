@@ -151,7 +151,11 @@ export async function createOrder(db: Client, actor: string, input: OrderInput):
 
 // A credit code is a way of paying like any other: the money moves out of
 // what we owe sellers instead of out of a bank account.
-export type PaymentIn = { method: "bank_transfer" | "paystack" | "credit"; reference: string; paidKobo: number; feeKobo: number; cashAccount: string };
+// The method is how the money reached us, and for a card gateway it is the
+// gateway's own name, because reconciling a settlement means knowing which one
+// took it. The unique index on the method and the reference together is what
+// stops one payment being booked twice.
+export type PaymentIn = { method: "bank_transfer" | "credit" | "paystack" | "flutterwave" | (string & {}); reference: string; paidKobo: number; feeKobo: number; cashAccount: string };
 
 // Money has arrived. Claims the order once and books the cash, whichever
 // way and however many times we are told about the same payment.

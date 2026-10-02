@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { formatNaira } from "../money.ts";
+import type { Health, PaymentGateway, StartPayment, Verification, WebhookRead } from "./gateway.ts";
 
 // Paystack takes money from a buyer by card, bank transfer or USSD and
 // tells us when it has settled. Their interface: POST /transaction/initialize
@@ -17,11 +18,12 @@ export function paystackConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Pay
   return { baseUrl: (env["PAYSTACK_BASE_URL"] ?? "https://api.paystack.co").replace(/\/$/, ""), secretKey };
 }
 
-export type Verification = { status: "success" | "pending" | "failed"; amountKobo: number; feesKobo: number; channel: string; reference: string };
-
-export class PaystackProvider {
+export class PaystackProvider implements PaymentGateway {
   readonly name = "paystack";
+  readonly label = "Paystack";
   readonly cashAccount = "cash:paystack";
+  // Signed over the body itself, so a forged body cannot keep a valid header.
+  readonly signatureHeaders = ["x-paystack-signature"] as const;
   private config: PaystackConfig;
   private fetchImpl: typeof fetch;
 
@@ -50,7 +52,7 @@ export class PaystackProvider {
   }
 
   // Starts a payment and returns the page to send the buyer to.
-  async initialize(input: { reference: string; amountKobo: number; email: string; callbackUrl: string }): Promise<{ url: string }> {
+  async initialize(input: StartPayment): Promise<{ url: string }> {
     const r = await this.call("POST", "/transaction/initialize", {
       reference: input.reference,
       amount: input.amountKobo,
@@ -67,10 +69,11 @@ export class PaystackProvider {
   // us proves nothing; this does.
   async verify(reference: string): Promise<Verification> {
     const r = await this.call("GET", `/transaction/verify/${encodeURIComponent(reference)}`);
-    const data = r.data as { status?: string; amount?: number; fees?: number | null; channel?: string; reference?: string } | undefined;
-    if (!r.status || !data) return { status: "pending", amountKobo: 0, feesKobo: 0, channel: "", reference };
+    const data = r.data as { status?: string; amount?: number; fees?: number | null; channel?: string; reference?: string; currency?: string } | undefined;
+    if (!r.status || !data) return { status: "pending", amountKobo: 0, feesKobo: 0, channel: "", reference, currency: "" };
     const status = data.status === "success" ? "success" : data.status === "failed" || data.status === "abandoned" || data.status === "reversed" ? "failed" : "pending";
-    return { status, amountKobo: Number(data.amount ?? 0), feesKobo: Number(data.fees ?? 0), channel: data.channel ?? "", reference: data.reference ?? reference };
+    // Paystack works in kobo throughout, so these need no conversion.
+    return { status, amountKobo: Number(data.amount ?? 0), feesKobo: Number(data.fees ?? 0), channel: data.channel ?? "", reference: data.reference ?? reference, currency: (data.currency ?? "NGN").toUpperCase() };
   }
 
   // A webhook is only believed when its signature matches our secret key.
@@ -82,7 +85,12 @@ export class PaystackProvider {
     return a.length === b.length && timingSafeEqual(a, b);
   }
 
-  async health(): Promise<{ ok: boolean; message: string; balanceKobo?: number }> {
+  readWebhook(rawBody: string): WebhookRead {
+    const body = JSON.parse(rawBody) as { event?: string; data?: { reference?: string } };
+    return { type: body.event ?? "", reference: body.data?.reference ?? "" };
+  }
+
+  async health(): Promise<Health> {
     try {
       const r = await this.call("GET", "/balance");
       const rows = (r.data as { currency?: string; balance?: number }[] | undefined) ?? [];

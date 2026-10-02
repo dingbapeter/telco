@@ -5,7 +5,7 @@ at the time it was asked. This file exists so that losing a conversation does
 not lose the decisions. When a decision is made, move it to the "Decided"
 section at the bottom with the date and the answer. Never delete a line.
 
-Last updated: 2 October 2026, after the laundering caps, the data validity floor and the fraud controls on buying back.
+Last updated: 2 October 2026, after the laundering caps, the fraud controls on buying back, and the move to Flutterwave for taking card money.
 
 ## Needed before the core can be built
 
@@ -404,6 +404,43 @@ prevent something that is already reversible.
 If you would rather credit waited too, say so: it is one setting and a step in
 the worker, about half a day's work, and the seller's page would show when
 their code appears.
+
+### 32. Prices in naira only, or real foreign currency pricing
+
+**What is built.** Flutterwave is now the card gateway, so a card issued
+anywhere works. We ask for naira, the buyer's own bank does the conversion at
+its rate, and we are settled in naira. A charge that comes back in any other
+currency is refused rather than converted on a guess. Nothing in the ledger
+changed, because every figure that reaches it is still naira.
+
+**What is not built.** Showing a price in pounds or dollars on our own page,
+holding a balance in that currency, or paying anybody out in one. That is a
+second currency in the books: a rate to choose and store, a gain or loss when
+the rate moves between the sale and the settlement, and a decision about who
+carries that risk. It is perhaps a fortnight of work and it changes the money
+pages, the report and the ledger.
+
+**What I need from you.** Which of the two you meant by accepting
+international currencies. If it is the first, nothing more is needed. If it is
+the second, say so and say who should carry the rate risk: the buyer, by
+pricing in naira and letting their bank convert, which is what happens now; or
+us, by quoting a fixed foreign price and absorbing the movement. Diaspora
+top-up is a real market and the second version reads better on a page, so this
+is a commercial decision, not a technical one.
+
+### 33. Paying out through Flutterwave, in or out of Nigeria
+
+Flutterwave can also send money, which is the other half of what you
+mentioned. Nothing uses it: paying a seller their cash and settling an agent's
+withdrawal are still a person making a bank transfer and recording the
+reference, deliberately, because that is the only place money leaves for good
+and a wait with eyes on it is the cheapest control there is. See
+docs/AUTOMATION.md.
+
+If you want those automated, the holding time, the day's cash ceiling and the
+seller history all stay in front of it, and the sensible order is: watch a few
+weeks of real payouts by hand first, then automate the ones that are already
+routine. Say the word and I will build it behind those same brakes.
 
 ## Decided
 
