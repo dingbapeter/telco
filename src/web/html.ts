@@ -73,7 +73,12 @@ export function page(o: PageOptions): string {
     ? html`<nav class="nav">
         ${NAV.map((n) => html`<a href="${n.href}" ${n.href === o.current ? raw('aria-current="page"') : ""}>${n.label}</a>`)}
         <form method="post" action="/admin/logout" class="inline"><button class="link" type="submit">Log out ${o.admin.name}</button></form>
-      </nav>`
+      </nav>
+      <form method="get" action="/admin/find" class="find" role="search">
+        <label for="find" class="hp">Find a number, reference or code</label>
+        <input id="find" name="q" type="search" placeholder="Find a number, reference or code" autocapitalize="characters">
+        <button type="submit" class="secondary">Find</button>
+      </form>`
     : "";
   return (
     "<!doctype html>" +

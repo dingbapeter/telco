@@ -4,6 +4,7 @@ import { registerAudit } from "./admin/audit.ts";
 import { registerBridgeAdmin } from "./admin/bridge.ts";
 import { registerBundles } from "./admin/bundles.ts";
 import { registerChecklist } from "./admin/checklist.ts";
+import { registerFind } from "./admin/find.ts";
 import { registerInbound } from "./admin/inbound.ts";
 import { registerLogin } from "./admin/login.ts";
 import { registerNumbers } from "./admin/numbers.ts";
@@ -40,6 +41,7 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicB
   registerNumbers(app);
   registerSettings(app);
   registerChecklist(app);
+  registerFind(app);
   registerBridgeAdmin(app);
   registerBundles(app);
   registerAudit(app);

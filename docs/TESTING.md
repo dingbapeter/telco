@@ -483,6 +483,33 @@ happen in the suite, because the suite had been fixed to fetch the command
 first, the way a phone does. A test now posts a result for a command still
 queued and expects nothing to be written down.
 
+## Find suite (`tests/find.test.ts`)
+
+Drives the one box that looks up a number, a reference, a credit code or an
+agent across everything the business holds. Checked on 2 October 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| A number typed with spaces or a country code finding nothing | Red |
+| The same thing found twice when a number is typed two ways | Red |
+| A reference typed in lower case finding nothing | Red |
+| The search box dropped from the pages | Red |
+
+### Two defences on purpose, found by a mutation that stayed green
+
+Searching a credit code finds the purchase it paid for twice over: the
+order carries the code in its own column, and the payment reference for a
+credit payment is the code and the order reference together. Taking the
+column out of the search changes nothing, because the payment reference
+still matches. The mutation was removed rather than the column: a second
+way of finding something is not a fault, and the format of a payment
+reference is not a thing to lean on.
+
+The same pattern, honestly: a number typed with a country code was found
+even with the digits left unstripped, because the number is also looked up
+in the form we store. The suite now searches part of a number with a space
+in it, which only the stripping can find.
+
 ## Security review (20 September 2026)
 
 Four readings of the whole code in parallel: the way people sign in, the
