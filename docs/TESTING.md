@@ -444,6 +444,45 @@ function of four numbers and test it with figures that are deliberately
 wrong. The alarm is now proven to be able to say no, which is the only
 thing worth proving about an alarm.
 
+## Balance checks suite (`tests/balances.test.ts`)
+
+Drives asking a SIM what the network says it holds, reading the answer,
+putting a difference through the books, and the schedule that asks without
+being asked. Checked on 2 October 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| A balance check ignoring what is already on its way off the SIM | Red |
+| An unreadable answer guessed at instead of kept word for word | Red |
+| A balance code that is not a code a SIM may dial sent anyway | Red |
+| A difference put through the books twice | Red |
+| Airtime found on a SIM booked as the founder's own float | Red |
+| Every SIM asked its balance over and over | Red |
+| A phone nobody has heard from still asked to dial | Red |
+| A text message settling a balance check, with both defences off | Red |
+| An answer written down for a command nobody dialled | Red |
+
+### Three that needed investigating
+
+The suite was green on three of these at first, and each was a real gap
+rather than a second defence.
+
+A phone that had not reported in was refused by the schedule's own rule, so
+mutating the rule the direct ask uses changed nothing. The suite now asks
+directly with a stale phone and expects the refusal.
+
+A text message cannot settle a balance check because a balance check has no
+number and the matcher pairs on the number. The kind filter in front of it
+is a second defence, and turning off only one leaves the other holding, so
+the mutation now turns off both. The first test message did not read as a
+confirmation at all, which is why even that looked green until it was
+rewritten.
+
+An answer written down for a command the phone never dialled could not
+happen in the suite, because the suite had been fixed to fetch the command
+first, the way a phone does. A test now posts a result for a command still
+queued and expects nothing to be written down.
+
 ## Security review (20 September 2026)
 
 Four readings of the whole code in parallel: the way people sign in, the

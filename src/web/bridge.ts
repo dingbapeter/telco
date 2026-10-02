@@ -1,3 +1,4 @@
+import { recordBalanceAnswer } from "../balances.ts";
 import { deviceFromToken, heartbeat, ingestMessage, receivingNumberFor, type IncomingMessage, type MessageResult } from "../bridge.ts";
 import { withActor } from "../db.ts";
 import { fetchCommands, reportResult } from "../sendingphone.ts";
@@ -71,7 +72,13 @@ export function registerBridge(app: App): void {
       if (!device) return { kind: "json", status: 401, body: { error: "This phone's token is not recognised." } };
       const id = Number(req.query.get("id"));
       const ok = req.form.get("ok") === "true";
-      const c = await withActor(`bridge:${device.label}`, (c) => reportResult(c, device.id, id, { ok, response: req.form.get("response") ?? undefined, failure: req.form.get("failure") ?? undefined }), db);
+      const c = await withActor(`bridge:${device.label}`, async (client) => {
+        const command = await reportResult(client, device.id, id, { ok, response: req.form.get("response") ?? undefined, failure: req.form.get("failure") ?? undefined });
+        // A balance check is settled here rather than by a later text
+        // message, because the answer is in the reply itself.
+        if (command?.kind === "check_balance") await recordBalanceAnswer(client, command);
+        return command;
+      }, db);
       if (!c) return { kind: "json", status: 404, body: { error: "No such command for this phone." } };
       return { kind: "json", body: { ok: true, state: c.state } };
     },

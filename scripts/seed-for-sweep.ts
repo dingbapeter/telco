@@ -4,12 +4,14 @@ import { createApiKey } from "../src/agentkeys.ts";
 import { createAgent, setAgentTerms, topUpWallet } from "../src/agents.ts";
 import { createAdmin } from "../src/auth.ts";
 import { createDevice } from "../src/bridge.ts";
+import { fetchCommands, reportResult } from "../src/sendingphone.ts";
 import { buyInBulk } from "../src/bulkorders.ts";
 import { upsertBundle } from "../src/bundles.ts";
 import { closePool, withActor } from "../src/db.ts";
 import { postJournal } from "../src/ledger.ts";
 import { createOrder } from "../src/orders.ts";
 import { setSetting } from "../src/settings.ts";
+import { askForBalance, recordBalanceAnswer } from "../src/balances.ts";
 import { quoteSellback } from "../src/sellbacks.ts";
 import { quoteTransfer, recordInbound } from "../src/transfers.ts";
 
@@ -37,7 +39,15 @@ const out = await withActor("seed", async (c) => {
   await postJournal(c, { idempotencyKey: "seed:airtel", description: "Seed float", postings: [{ account: "pool:AIRTEL", amountKobo: 500_000 }, { account: "equity:float", amountKobo: -500_000 }] });
   await upsertBundle(c, { network: "AIRTEL", code: "airtel-1gb", name: "Airtel 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: 50_000, providerVariationCode: "x" });
   await upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: 60_000, giftable: true });
-  await createDevice(c, "MTN phone", "MTN");
+  const { device } = await createDevice(c, "MTN phone", "MTN");
+  await c.query("UPDATE bridge_devices SET can_send = true, pin_set = true, last_seen_at = now() WHERE id = $1", [device.id]);
+  await setSetting(c, "seed", "network.balance_code", { MTN: "*310#", AIRTEL: "", GLO: "", "9MOBILE": "" });
+  // One balance check already answered, so the Pools page has a real
+  // difference on it rather than an empty table.
+  const { check } = await askForBalance(c, "seed", "MTN");
+  await fetchCommands(c, device.id);
+  const command = await reportResult(c, device.id, check.command_id, { ok: true, response: "Your balance is N4,850.00 valid till 31/12/2026" });
+  await recordBalanceAnswer(c, command!);
   const { agent } = await createAgent(c, AGENT);
   await topUpWallet(c, agent.id, { reference: "seed", paidKobo: 250_000, feeKobo: 0, cashAccount: "cash:bank", method: "bank_transfer" });
   await setAgentTerms(c, agent.id, { discountBasisPoints: 300, commissionBasisPoints: null, creditLimitKobo: 500_000 });

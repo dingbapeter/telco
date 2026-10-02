@@ -7,6 +7,7 @@ import { getSetting, getSettingValue, getSettingValues, NETWORK_CODES, SETTINGS 
 import { STALE_AFTER_MINUTES } from "./admin/bridge.ts";
 import { expiringSoon } from "./datalots.ts";
 import { paystackFromEnv } from "./payments/paystack.ts";
+import { describeDifference, latestChecks } from "./balances.ts";
 import { percentOf, rateFor } from "./sellbacks.ts";
 import { railFromEnv } from "./rails/rail.ts";
 
@@ -170,6 +171,32 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
         ? { status: "ok", title: "Automatic payouts are on", detail: "Confirmed transfers are paid through the provider without a person." }
         : { status: "warn", title: "Automatic payouts are off", detail: "The provider is set up but every payout still waits for a person.", fix: "Command centre, Settings, Guardrails: turn automatic payouts on." },
     );
+  }
+
+  // Do the books agree with the networks? Only asked about networks we can
+  // actually ask, so a founder without a sending phone is not nagged.
+  const [balanceCodes, warnAt, checkMinutes] = await getSettingValues(db, ["network.balance_code", "pool.difference_warn_kobo", "phone.balance_check_minutes"] as const);
+  const simChecks = await latestChecks(db);
+  const asked = (at: Date): string => at.toISOString().slice(0, 16).replace("T", " ");
+  for (const c of NETWORK_CODES) {
+    if (balanceCodes[c] === "") continue;
+    const check = simChecks[c];
+    if (!check) {
+      checks.push({ status: "warn", title: `${c}'s SIM has never been asked its balance`, detail: "Nothing has ever checked our ledger against what the network says is on that SIM.", fix: "Command centre, Pools: press Ask now on that network." });
+    } else if (check.state === "answered" && !check.accepted_at && Math.abs(check.difference_kobo ?? 0) > warnAt) {
+      checks.push({
+        status: "bad",
+        title: `${c}'s SIM and the ledger are ${formatNaira(Math.abs(check.difference_kobo ?? 0))} apart`,
+        detail: `${describeDifference(check)} Asked ${asked(check.asked_at)} UTC.`,
+        fix: "Command centre, Pools: read the network's words and put the difference through the books, or find out where it went first.",
+      });
+    } else if (check.state === "unreadable") {
+      checks.push({ status: "warn", title: `${c}'s balance answer could not be read`, detail: `The network said: ${(check.raw_text ?? "").slice(0, 120)}`, fix: "Command centre, Settings, Networks: set a balance pattern for this network that matches those words." });
+    } else if (check.state === "failed") {
+      checks.push({ status: "warn", title: `${c}'s phone could not ask for a balance`, detail: check.raw_text ?? "The phone reported a failure.", fix: "Command centre, Phone bridge: check the phone is on, allowed to call, and has reported recently." });
+    } else if (check.state === "answered") {
+      checks.push({ status: "ok", title: `${c}'s SIM agrees with the ledger`, detail: `${describeDifference(check)} Last asked ${asked(check.asked_at)} UTC${checkMinutes > 0 ? `, and asked again every ${checkMinutes} minutes` : ""}.` });
+    }
   }
 
   const [retail, bankName, bankNumber, bankAccount] = await getSettingValues(db, ["retail.enabled", "retail.bank_name", "retail.bank_account_number", "retail.bank_account_name"] as const);

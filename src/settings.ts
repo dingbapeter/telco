@@ -584,6 +584,46 @@ export const SETTINGS = {
     validate: perNetwork(intBetween(0, 10_000_000_000, "kobo")),
     format: each(kobo),
   }),
+  "network.balance_code": define({
+    key: "network.balance_code",
+    group: "Networks",
+    label: "Balance code our SIM dials",
+    description:
+      "The network's own code for asking what is left on a line, for example *310#. The sending phone dials it and sends back the answer, which is compared with what our ledger says the pool holds. Empty means we cannot check that network's SIM.",
+    fallback: emptyPerNetwork,
+    validate: perNetwork(dialCode(60)),
+    format: each((v) => (v === "" ? "not set" : v)),
+  }),
+  "network.balance_pattern": define({
+    key: "network.balance_pattern",
+    group: "Networks",
+    label: "How to read the network's balance answer",
+    description:
+      "A pattern with (?<amount>...) for the naira figure, matched against what the network replies to the balance code. Empty means the built-in pattern, which looks for the first amount after the word balance. Test it on the Phone bridge page.",
+    fallback: emptyPerNetwork,
+    validate: perNetwork(text(400)),
+    format: each((v) => (v === "" ? "built-in" : v)),
+  }),
+  "phone.balance_check_minutes": define({
+    key: "phone.balance_check_minutes",
+    group: "Guardrails",
+    label: "How often each SIM is asked its balance",
+    description:
+      "The server asks each sending phone for its network's balance this often, so a pool that has drifted from the SIM is noticed without anybody remembering to look. Zero means only when you press the button on the Pools page.",
+    fallback: 0,
+    validate: intBetween(0, 1_440, "minutes"),
+    format: (v) => (v === 0 ? "only when asked" : `every ${v} minutes`),
+  }),
+  "pool.difference_warn_kobo": define({
+    key: "pool.difference_warn_kobo",
+    group: "Pools",
+    label: "Difference worth worrying about",
+    description:
+      "The launch checklist turns red when the last balance check on a network differs from the ledger by more than this. A SIM used for ordinary calls will always drift a little, so this is not zero.",
+    fallback: 10_000,
+    validate: intBetween(0, 100_000_000, "kobo"),
+    format: kobo,
+  }),
   "network.daily_transfer_cap_kobo": define({
     key: "network.daily_transfer_cap_kobo",
     group: "Networks",

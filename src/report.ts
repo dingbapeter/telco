@@ -27,6 +27,7 @@ const SHORT: Record<string, string> = {
   "expense:agent_commissions": "Commission paid to agents",
   "expense:payment_fees": "Payment provider's fees",
   "expense:losses": "Airtime and data lost",
+  "revenue:adjustments": "Airtime found on a SIM",
 };
 
 export function shortName(code: string, name: string): string {

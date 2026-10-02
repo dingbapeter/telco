@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
 import type pg from "pg";
+import { acceptDifference, askForBalance, describeDifference, expectedOnSim, latestChecks } from "../balances.ts";
 import { openLots } from "../datalots.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { balances, postJournal } from "../ledger.ts";
-import { NETWORK_CODES } from "../settings.ts";
+import { getSettingValue, NETWORK_CODES, type NetworkCode } from "../settings.ts";
 import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf, money, nairaField, requiredField, when } from "./shared.ts";
@@ -32,6 +33,9 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
   ]);
   const byCode = Object.fromEntries(all.map((a) => [a.code, a]));
   const lots = await openLots(db);
+  const checks = await latestChecks(db);
+  const codes = await getSettingValue(db, "network.balance_code");
+  const expected = Object.fromEntries(await Promise.all(NETWORK_CODES.map(async (c) => [c, await expectedOnSim(db, c)] as const))) as Record<NetworkCode, Awaited<ReturnType<typeof expectedOnSim>>>;
   const soon = Date.now() + 7 * 86_400_000;
   // A fresh key per form render makes a double submit book once.
   const key = randomBytes(8).toString("hex");
@@ -39,6 +43,30 @@ async function poolsPage(req: Request, db: pg.Pool, message?: Html, status = 200
     ${message ?? ""}
     <p class="muted">A pool is the airtime we hold on a network, according to our own ledger. It should match the balance on that network's SIM. When it does not, record the difference below so the ledger stays true.</p>
     <div class="cards">${NETWORK_CODES.map((c) => html`<div class="card"><div class="label">${c} pool</div><div class="value">${money(byCode[`pool:${c}`]?.balanceKobo ?? 0)}</div></div>`)}</div>
+    <h2>What the network says the SIM holds</h2>
+    <p class="muted">The phone on each network dials that network's own balance code and sends back the answer. What the SIM should hold is what the pool holds, less anything already on its way out of it. A difference is not always a mistake: a SIM used for ordinary calls drifts a little. Accepting one moves the ledger to where the network says we are, with your reason in the books.</p>
+    <div class="scroll"><table><tr><th>Network</th><th class="num">Ledger</th><th class="num">On its way out</th><th class="num">Should hold</th><th class="num">Network says</th><th>Difference</th><th>Asked</th><th></th></tr>
+      ${NETWORK_CODES.map((c) => {
+        const check = checks[c];
+        const e = expected[c];
+        return html`<tr><td>${c}</td><td class="num">${money(e.ledgerKobo)}</td><td class="num">${money(e.committedKobo)}</td><td class="num">${money(e.expectedKobo)}</td>
+          <td class="num">${check?.state === "answered" ? money(check.reported_kobo) : ""}</td>
+          <td>${check ? describeDifference(check) : html`<span class="muted">never asked</span>`}${check?.accepted_at ? " Put through the books." : ""}</td>
+          <td>${check ? when(check.asked_at) : ""}</td>
+          <td>${codes[c] === ""
+            ? html`<span class="muted">no balance code</span>`
+            : html`<form method="post" action="/admin/pools/balance" class="inline">${csrf(req)}<input type="hidden" name="network" value="${c}"><button type="submit" class="secondary">Ask now</button></form>`}</td></tr>`;
+      })}
+    </table></div>
+    ${NETWORK_CODES.map((c) => {
+      const check = checks[c];
+      if (!check || check.state !== "answered" || check.accepted_at || (check.difference_kobo ?? 0) === 0) return "";
+      return html`<form method="post" action="/admin/pools/balance/${check.id}/accept" class="panel">${csrf(req)}
+        <p><strong>${c}:</strong> ${describeDifference(check)} The network said ${money(check.reported_kobo)} and the books expect ${money((check.ledger_kobo ?? 0) - (check.committed_kobo ?? 0))}.</p>
+        <p class="muted">The network's own words: ${check.raw_text ?? ""}</p>
+        <div class="row"><div><label for="note-${check.id}">What the difference was</label><input id="note-${check.id}" name="note" type="text" required placeholder="airtime used for calls from this SIM"></div>
+          <div><label>&nbsp;</label><button type="submit" class="${(check.difference_kobo ?? 0) < 0 ? "danger" : ""}">Put it through the books</button></div></div></form>`;
+    })}
     <h2>Gifted data we hold</h2>
     <p class="muted">Each bundle gifted to a SIM is a lot worth its catalogue value until it expires. Data goes out oldest first. What expires unused is written off as a loss the day it expires, with a line in the ledger.</p>
     <div class="scroll"><table><tr><th>Network</th><th class="num">Size</th><th class="num">Value left</th><th>Received</th><th>Expires</th><th>From</th></tr>
@@ -110,4 +138,25 @@ export function registerPools(app: App): void {
     });
   record("fund", "fund");
   record("loss", "loss");
+
+  app.post("/admin/pools/balance", async (req, db) => {
+    try {
+      const network = requiredField(req.form, "network", "The network");
+      const { command } = await withActor(actor(req.admin), (c) => askForBalance(c, actor(req.admin), network), db);
+      return poolsPage(req, db, notice("ok", `Asked the ${network} phone for its balance as command ${command.id}. It dials within a minute, and this page shows the answer when it comes back.`));
+    } catch (err) {
+      if (err instanceof UserFacingError) return poolsPage(req, db, notice("problem", err.message), 400);
+      throw err;
+    }
+  });
+
+  app.post("/admin/pools/balance/:id/accept", async (req, db) => {
+    try {
+      const check = await withActor(actor(req.admin), (c) => acceptDifference(c, actor(req.admin), Number(req.query.get("id")), req.form.get("note") ?? ""), db);
+      return poolsPage(req, db, notice("ok", `The ${check.network_code} pool now agrees with the SIM. ${money(Math.abs(check.difference_kobo ?? 0))} went through the books as ${(check.difference_kobo ?? 0) < 0 ? "a loss" : "airtime found"}.`));
+    } catch (err) {
+      if (err instanceof UserFacingError) return poolsPage(req, db, notice("problem", err.message), 400);
+      throw err;
+    }
+  });
 }

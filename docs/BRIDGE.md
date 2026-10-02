@@ -129,3 +129,33 @@ cd bridge-android
 ```
 
 The file is written to `app/build/outputs/apk/debug/app-debug.apk`.
+
+## Asking a SIM what the network says it holds
+
+A pool is our ledger's belief about the airtime on a SIM. A balance check
+is how that belief is tested against the network itself.
+
+The server queues the network's own balance code, for example `*310#`, the
+same way it queues a payout. The phone dials it and sends back the reply,
+and nothing about the app changes: it already refuses to dial anything that
+is not a top-up code, and a balance code is one. **No new version of the app
+is needed for this.**
+
+The reply is read with the network's balance pattern, and three figures are
+written down together: what the network said, what our ledger says the pool
+holds, and what has left the SIM on its way to somebody but has not yet
+left the ledger. The difference is the first less the other two.
+
+- **Set it up** under Settings, Networks: the balance code for each network,
+  and a balance pattern if the built-in one cannot read that network's
+  words. The built-in one looks for the first amount after the word balance.
+- **Ask on demand** on the Pools page, with Ask now.
+- **Ask on its own** by setting how often under Settings, Guardrails. Zero
+  means only when you press the button.
+- **Accept a difference** on the Pools page. It moves the ledger to where
+  the network says we are, with your reason in the books: a shortfall as a
+  loss, a surplus as airtime found, never as the founder's float.
+
+A difference is not always a mistake. A SIM used for ordinary calls drifts a
+little, which is why the launch checklist only turns red above the figure
+you set under Settings, Pools.

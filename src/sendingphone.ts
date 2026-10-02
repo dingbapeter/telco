@@ -13,7 +13,7 @@ export type PhoneCommand = {
   id: number;
   device_id: number;
   network_code: NetworkCode;
-  kind: "send_airtime" | "gift_data";
+  kind: "send_airtime" | "gift_data" | "check_balance";
   number: string;
   amount_kobo: number;
   bundle_id: number | null;
@@ -99,6 +99,27 @@ export async function queueCommand(db: Queryable, input: QueueInput): Promise<Ph
   return rows[0]!;
 }
 
+// Asks the phone on a network what the network says the SIM holds. It
+// sends nothing and costs nothing, so it has no amount and no number, but
+// it goes through the same guard as every other code: a phone is only ever
+// asked to dial a top-up code.
+export async function queueBalanceCheck(db: Queryable, network: NetworkCode): Promise<PhoneCommand> {
+  const phone = await sendingPhoneFor(db, network);
+  if (!phone) throw new UserFacingError("no_sending_phone", `No phone on ${network} can dial right now. It needs the app allowed to make calls, its PIN entered, and to have reported in the last 30 minutes.`);
+  const codes = await getSettingValue(db, "network.balance_code");
+  const code = codes[network];
+  if (!code) throw new UserFacingError("no_balance_code", `No balance code is set for ${network} under Settings, Networks.`);
+  if (!looksLikeTopUpCode(code)) {
+    throw new UserFacingError("bad_code", `The ${network} balance code does not read as a code a SIM may dial: ${code}. Check it under Settings, Networks.`);
+  }
+  const { rows } = await db.query<PhoneCommand>(
+    `INSERT INTO phone_commands (device_id, network_code, kind, number, amount_kobo, bundle_id, code, purpose, state)
+     VALUES ($1, $2, 'check_balance', '', 0, NULL, $3, 'balance check', 'queued') RETURNING *`,
+    [phone.id, network, code],
+  );
+  return rows[0]!;
+}
+
 // The phone asks for work. Each command is handed out once.
 export async function fetchCommands(db: Queryable, deviceId: number, limit = 5): Promise<PhoneCommand[]> {
   const { rows } = await db.query<PhoneCommand>(
@@ -128,6 +149,9 @@ export async function reportResult(db: Queryable, deviceId: number, commandId: n
     const retryable = RETRYABLE_REPLY.test(failure) || /USSD|dial/i.test(failure);
     return (await db.query<PhoneCommand>("UPDATE phone_commands SET state = 'failed', dialled_at = coalesce(dialled_at, now()), failure = $2, resolved_at = now(), resolved_by = $3 WHERE id = $1 RETURNING *", [c.id, `${retryable ? "retry:" : "final:"} ${failure}`, "phone"])).rows[0];
   }
+  if (c.kind === "check_balance") {
+    return (await db.query<PhoneCommand>("UPDATE phone_commands SET state = 'confirmed', dialled_at = coalesce(dialled_at, now()), response_text = $2, resolved_at = now(), resolved_by = 'phone' WHERE id = $1 RETURNING *", [c.id, response])).rows[0];
+  }
   const patterns = await getSettingValue(db, "network.sent_pattern");
   const read = readSentConfirmation(response, patterns[c.network_code]);
   if (!("problem" in read) && read.number === c.number) {
@@ -142,7 +166,7 @@ export async function reportResult(db: Queryable, deviceId: number, commandId: n
 // A text message from the network on the sending phone may be the
 // confirmation for a command still waiting. Returns the command it settled.
 export async function confirmFromMessage(db: Queryable, deviceId: number, body: string): Promise<PhoneCommand | undefined> {
-  const waiting = (await db.query<PhoneCommand>("SELECT * FROM phone_commands WHERE device_id = $1 AND state IN ('fetched', 'dialled') ORDER BY id", [deviceId])).rows;
+  const waiting = (await db.query<PhoneCommand>("SELECT * FROM phone_commands WHERE device_id = $1 AND state IN ('fetched', 'dialled') AND kind <> 'check_balance' ORDER BY id", [deviceId])).rows;
   if (waiting.length === 0) return undefined;
   const patterns = await getSettingValue(db, "network.sent_pattern");
   const read = readSentConfirmation(body, patterns[waiting[0]!.network_code]);
@@ -219,6 +243,7 @@ export class PhoneRail implements PayoutRail {
 }
 
 export function describeCommand(c: PhoneCommand, bundle?: Bundle | undefined): string {
+  if (c.kind === "check_balance") return "ask the network what this SIM holds";
   return c.kind === "gift_data" ? `gift ${bundle ? describeBundle(bundle) : "a bundle"} to ${c.number}` : `send ${formatNaira(c.amount_kobo)} to ${c.number}`;
 }
 
