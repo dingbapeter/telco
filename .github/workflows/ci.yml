@@ -56,8 +56,16 @@ jobs:
         run: npm test
 
   mutations:
-    name: Mutation check
+    # Every breakage rebuilds the database and runs a suite, so the whole list
+    # is about an hour on one machine. Three runners, each with its own
+    # database, bring it back to twenty minutes. A check nobody waits for is a
+    # check somebody will learn to push past.
+    name: Mutation check ${{ matrix.shard }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/3", "2/3", "3/3"]
     services:
       postgres:
         image: postgres:16
@@ -83,6 +91,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Every deliberate breakage must turn its suite red
         run: node scripts/mutation-check.ts
+        env:
+          MUTATION_SHARD: ${{ matrix.shard }}
 
   android:
     name: Phone bridge app

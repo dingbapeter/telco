@@ -36,7 +36,9 @@ MUTATION_SHARD=1/3 DATABASE_URL=postgres://.../telco_m1_test node scripts/mutati
 ```
 
 A copy per shard is not optional: two shards in one folder would edit the same
-files and report nonsense.
+files and report nonsense. CI needs no copies, because each runner in the
+matrix has its own checkout and its own database; it runs three shards and
+every one of them has to come back clean.
 
 **If a run is killed part way through, the file it was editing is left
 broken.** The script puts every file back in a `finally` block, which a kill
