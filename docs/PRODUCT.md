@@ -149,6 +149,12 @@ Built as described, on the same core: see docs/DATA.md.
 - **Network limits.** Each network caps how much airtime a subscriber can
   transfer in a day. The product enforces the same caps so it never tells a
   person to do something their network will refuse.
+- **Washing money.** A service that moves value between phone numbers for a
+  small fee is a service for washing money unless something counts. The
+  product counts: what one number may move and how often, in a day and in a
+  week, on the sending side, the receiving side and the selling side. Value
+  that arrives over a cap goes back to the line it came from by itself, with
+  nothing paid out and no fee kept. See docs/CAPS.md.
 - **Regulation.** The Nigerian Communications Commission has views on value
   added services. Whether and when to engage is the founder's decision. The
   switch layer is the thing a licence application would describe.
@@ -223,3 +229,8 @@ code waits on an aggregator contract, not on software.
    send airtime and gift bundles from our SIMs, so payouts from a pool,
    refunds and pool draining happen without a person.
 8. Agents. Built.
+9. Buying airtime and data back, with the caps and the fraud controls that
+   have to come with it. Built: docs/SELLBACK.md and docs/CAPS.md.
+
+Who does what once it is running, and the four things that still need a
+person, are in docs/AUTOMATION.md.

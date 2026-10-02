@@ -30,9 +30,12 @@ building, so it is built with the brakes on and every brake is a setting.
    transfer and record the reference.
 
 A sale that nothing arrives for lapses on its own and leaves nothing owed.
-Value that arrives outside the limits, or from a number you have since
-blocked, is held for a person, who either buys it anyway or sends it back
-to the seller's line.
+Value that arrives over one of the caps, or over the most we buy in one go,
+goes straight back to the line it came from without anybody being asked: the
+phone on that network sends it, and nothing is owed. Value held for a reason
+that needs judgement, such as a number you have since blocked or one bank
+account collecting for several lines, waits for a person, who either buys it
+anyway or sends it back.
 
 ## Credit before cash
 
@@ -106,12 +109,58 @@ All under Settings, Buying back.
 | What we pay for airtime, what we pay for data | The rate, per network. Zero means not buying that kind there. |
 | Gap we keep between buying and selling | The circle guard above. |
 | Smallest we will buy, largest we will buy at once | The size of one sale. |
-| Most one number may sell in a day | A single line's day, counted in Lagos days. |
+| Most one number may sell in a day, most in a week | A single line, counted in Lagos days and from Monday. Zero turns the weekly one off. |
+| Sales one number may make in a day, in a week | How many, whatever they are worth. Breaking a large amount into small sales is the first thing anybody tries. Zero turns them off. |
+| Phone numbers one bank account may be paid for | Above this, a cash sale is held with the other numbers named. Zero turns it off. |
+| Send value over a cap straight back | On to start with. Off means we hold value we have decided not to buy while the seller waits. |
+| Shortest data validity we will take | Six months to start with. Data we cannot resell before it dies costs us what we paid for it. |
 | Most we will buy in a day | The face value we will take in per network per day. Zero means not buying, so this has to be set before anything happens. |
 | How long a seller has to send | How long a quoted rate is held. |
-| How long we assume bought data lasts | What bought data is recorded as being worth for, and when it is written off. |
+| How long we assume data gifted to us lasts | What data gifted to us is recorded as being worth for, and when it is written off. |
 | Holding time before cash can be paid | How long a cash payout waits after the value lands. A day to start with. |
 | Most cash we will pay out in a day | Across every seller. Zero means no cash at all, whatever the switch says. |
+
+The four caps on a selling number are counted in `src/limits.ts`, the same
+file and the same arithmetic as the caps on the transfer side, and the whole
+of that thinking is in docs/CAPS.md. They are checked when a quote is asked
+for **and again when value actually arrives**, because anybody can send
+airtime to our SIM having asked us nothing at all.
+
+## One bank account, many lines
+
+The strongest signal of a ring, and the only one that does not rest on
+anybody's judgement, is one bank account collecting the money for sales from
+several different phone numbers.
+
+So the ten digit account number inside what a seller types is kept on its
+own, and counted. Above the number of lines you allow, the sale is **held
+for you** rather than sent back, with the other numbers named on the page,
+because a family really might share an account and that is a judgement, not
+an arithmetic. Nothing else is read out of what they typed, and the whole
+text is still shown to whoever pays.
+
+A cash sale with no account number in it at all is refused when it is
+quoted: there would be nothing to pay into, and nothing to count.
+
+## Data we will not take
+
+Bought data is stock. If it dies before we sell it on, we have paid cash for
+nothing, so **we only take data whose catalogue validity is six months or
+more**, and none at all whose validity nobody has written down, whatever the
+floor says: data we cannot date is data we cannot value, cannot sell with a
+straight face and cannot write off on time. The floor is a setting.
+
+Two consequences worth knowing before you move it:
+
+- Most Nigerian bundles are thirty days. At six months, the only data we buy
+  is the long-dated kind, which is a small part of what people hold. Airtime
+  is untouched by this.
+- The same rule governs data gifted to us to pay for a transfer, because that
+  data sits in our pool in exactly the same way.
+
+A bundle that fails either test is offered to nobody, on the selling page or
+the transfer page, because being refused after you have sent something is
+worse than never being offered it. The Data bundles page marks them.
 
 Beyond the settings:
 
@@ -121,9 +170,13 @@ Beyond the settings:
 - **Stopping a credit code.** When we should never have bought the value
   behind it. The reason is required, what is left on the code becomes ours,
   and the seller is told the code was stopped.
-- **The seller's history.** Every cash payout shows how many times that
-  number has sold to us, how much in total, and when it first appeared, so
-  a new number asking for a large payout looks like what it is.
+- **The seller's history.** Every screen where a payout or a release can be
+  settled shows the same facts about the number: how many times it has sold
+  to us, how much in all, how much it has taken, when it first appeared,
+  whether it is blocked, and any other lines sharing its bank account. The
+  cash queue, the held list and the sale's own page all show it, so a new
+  number asking for a large payout looks like what it is wherever you meet
+  it.
 - **The same SIM's daily cap.** What we buy counts against the receiving
   number's daily cap along with transfers, because the network's limit
   applies to the SIM and not to our reasons for using it.
@@ -139,6 +192,12 @@ Beyond the settings:
   and cash should stay off.
 - **No buying from an agent's wallet.** An agent sells to us as anybody
   else does, from their own line.
+- **No holding time on credit.** Cash waits; a credit code is handed over
+  the moment the value lands. Credit never leaves the business, so the cost
+  of being wrong is airtime we can stop: the code can be stopped with a
+  reason and whatever is left on it becomes ours. Making sellers wait for a
+  code would cost us honest sales to prevent something we can already undo.
+  Say the word and it becomes a setting like the others.
 
 ## What can go wrong
 
@@ -158,3 +217,6 @@ Beyond the settings:
   and the refund stays where the stopped money went.
 - **A seller says they never got their cash.** The bank reference is on the
   sale, and the sale is in the audit log with who settled it.
+- **Value is going back and the phone cannot send it.** It appears on the
+  Buying back page as yours to send by hand, with the phone's own words. Take
+  it over first, so it cannot go out twice, then record what you sent.

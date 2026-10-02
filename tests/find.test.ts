@@ -49,7 +49,7 @@ beforeEach(async () => {
     await setSetting(c, "founder", "sellback.airtime_enabled", true);
     await setSetting(c, "founder", "sellback.daily_buy_cap_kobo", { MTN: naira(100_000), AIRTEL: naira(100_000), GLO: naira(100_000), "9MOBILE": naira(100_000) });
   });
-  await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB", sizeMb: 1024, priceKobo: naira(600), giftable: true }));
+  await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB", sizeMb: 1024, validityDays: 365, priceKobo: naira(600), giftable: true }));
   const { transfer } = await as("sender", (c) => quoteTransfer(c, "sender", { fromNetwork: "MTN", toNetwork: "AIRTEL", senderNumber: SENDER, recipientNumber: "08021234567", amountKobo: naira(1_000) }));
   transferRef = transfer.reference;
   orderRef = (await as("buyer", (c) => createOrder(c, "buyer", { network: "AIRTEL", recipientNumber: "08021234567", faceKobo: naira(500) }))).reference;

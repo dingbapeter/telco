@@ -23,6 +23,9 @@ import { actor, csrf, money, pager, requiredField, stateBadge, when } from "./sh
 const PAGE = 50;
 
 const NEEDS_PERSON = ["held", "awaiting_approval", "payout_failed"];
+// A refund the phones could not send is a person's too, and it is the one
+// kind of work where somebody else's value is sitting on our SIM.
+const NEEDS_PERSON_WHERE = `(state = ANY($1) OR (state = 'refunding' AND refund_rail = 'manual'))`;
 
 async function listPage(req: Request, db: pg.Pool): Promise<string> {
   const pageNo = Math.max(1, Number(req.query.get("page") ?? 1) || 1);
@@ -31,7 +34,10 @@ async function listPage(req: Request, db: pg.Pool): Promise<string> {
   const reference = (req.query.get("q") ?? "").trim();
   const where: string[] = [];
   const params: unknown[] = [];
-  if (needs) where.push(`state = ANY($${params.push(NEEDS_PERSON)})`);
+  if (needs) {
+    params.push(NEEDS_PERSON);
+    where.push(NEEDS_PERSON_WHERE.replaceAll("$1", `$${params.length}`));
+  }
   if (state) where.push(`state = $${params.push(state)}`);
   if (reference) where.push(`(reference ILIKE $${params.push("%" + reference + "%")} OR sender_number LIKE $${params.push("%" + reference.replace(/\D/g, "") + "%")})`);
   params.push(PAGE + 1, (pageNo - 1) * PAGE);

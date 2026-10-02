@@ -53,7 +53,7 @@ beforeEach(async () => {
     await setSetting(c, "founder", "network.transfer_code", { MTN: "*321*{pin}*{amount}*{number}#", AIRTEL: "*432*{amount}*{number}#", GLO: "", "9MOBILE": "" });
     await setSetting(c, "founder", "network.data_gift_code", { MTN: "", AIRTEL: "*141*{number}*{size}#", GLO: "", "9MOBILE": "" });
   });
-  airtel1gb = await as("founder", (c) => upsertBundle(c, { network: "AIRTEL", code: "airtel-1gb", name: "Airtel 1GB", sizeMb: 1024, priceKobo: naira(500), giftable: true }));
+  airtel1gb = await as("founder", (c) => upsertBundle(c, { network: "AIRTEL", code: "airtel-1gb", name: "Airtel 1GB", sizeMb: 1024, validityDays: 365, priceKobo: naira(500), giftable: true }));
 });
 
 async function confirmedTransfer(to = "AIRTEL", amount = 500) {

@@ -38,7 +38,7 @@ beforeEach(async () => {
   resetQuoteLimits();
   await seedAdmin();
   await addReceivingNumber("08039990001", "MTN");
-  mtn1gb = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: naira(600), giftable: true }));
+  mtn1gb = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 1 year", sizeMb: 1024, validityDays: 365, priceKobo: naira(600), giftable: true }));
   await as("founder", async (c) => {
     await setSetting(c, "founder", "retail.enabled", true);
     await setSetting(c, "founder", "agent.enabled", true);

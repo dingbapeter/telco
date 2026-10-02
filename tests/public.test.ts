@@ -34,7 +34,9 @@ test("the front page says what it costs, from the live settings, and asks for no
   const r = await b.get("/");
   assert.equal(r.status, 200);
   assert.match(r.text, /Fee: 2.50 percent, at least N20 and at most N200/);
-  assert.match(r.text, /From N100 to N10,000 per transfer/);
+  // The day's caps are printed too, so nobody meets one for the first time
+  // by being refused.
+  assert.match(r.text, /From N100 to N10,000 per transfer, and N20,000 a day from one number over at most 10 transfers/);
   const fields = [...r.text.matchAll(/<input[^>]*name="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(fields, ["sender", "recipient", "amount", "website", "reference"]);
   assert.doesNotMatch(r.text, /type="password"/);

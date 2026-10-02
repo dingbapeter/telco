@@ -233,6 +233,71 @@ export const SETTINGS = {
     validate: intBetween(0, 10_080, "minutes"),
     format: (v) => `${v} minutes`,
   }),
+  // Caps that exist to stop the service being used to wash money. Each is
+  // counted on a phone number rather than on a person, because a number is
+  // all we have, and each can be turned off with a zero, which is said in
+  // every description so nobody has to guess what a zero does. A cap a
+  // sender walks into refuses the quote; value that arrives over a cap
+  // anyway is held, and sent back to the line it came from if the switch at
+  // the end of this group is on.
+  "transfer.sender_weekly_max_kobo": define({
+    key: "transfer.sender_weekly_max_kobo",
+    group: "Laundering caps",
+    label: "Weekly limit per sender",
+    description:
+      "The most one sending number can move in a week, counted from Monday in Lagos. Zero turns it off. A daily limit on its own is easy to live under: the weekly one is what notices a number moving its full day's allowance every day of the week.",
+    fallback: 10_000_000,
+    validate: intBetween(0, 10_000_000_000, "kobo"),
+    format: (v) => (v === 0 ? "no weekly limit" : kobo(v)),
+  }),
+  "transfer.sender_daily_max_count": define({
+    key: "transfer.sender_daily_max_count",
+    group: "Laundering caps",
+    label: "Transfers one sender may make in a day",
+    description:
+      "How many transfers one sending number may make in a Lagos day, whatever they are worth. Zero turns it off. Many small transfers to many lines is what washing money looks like, and no money cap sees it.",
+    fallback: 10,
+    validate: intBetween(0, 1_000, "count"),
+    format: (v) => (v === 0 ? "no limit on how many" : `${v} transfers`),
+  }),
+  "transfer.sender_weekly_max_count": define({
+    key: "transfer.sender_weekly_max_count",
+    group: "Laundering caps",
+    label: "Transfers one sender may make in a week",
+    description: "The same count over a week from Monday in Lagos. Zero turns it off. Set it below seven times the daily count, or the daily count is the only one that will ever bite.",
+    fallback: 30,
+    validate: intBetween(0, 5_000, "count"),
+    format: (v) => (v === 0 ? "no limit on how many" : `${v} transfers`),
+  }),
+  "transfer.recipient_daily_max_kobo": define({
+    key: "transfer.recipient_daily_max_kobo",
+    group: "Laundering caps",
+    label: "Daily limit per receiving number",
+    description:
+      "The most one receiving number can be sent in a Lagos day, added up across everybody who sent to it. Zero turns it off. This is the cap that sees money broken into small pieces across many sending lines and put back together on one.",
+    fallback: 2_000_000,
+    validate: intBetween(0, 10_000_000_000, "kobo"),
+    format: (v) => (v === 0 ? "no limit per receiving number" : kobo(v)),
+  }),
+  "transfer.recipient_daily_max_count": define({
+    key: "transfer.recipient_daily_max_count",
+    group: "Laundering caps",
+    label: "Transfers one receiving number may be sent in a day",
+    description: "How many transfers one receiving number may be sent in a Lagos day, from however many senders. Zero turns it off.",
+    fallback: 10,
+    validate: intBetween(0, 1_000, "count"),
+    format: (v) => (v === 0 ? "no limit on how many" : `${v} transfers`),
+  }),
+  "transfer.return_over_limit": define({
+    key: "transfer.return_over_limit",
+    group: "Laundering caps",
+    label: "Send value over a cap straight back",
+    description:
+      "When airtime or data arrives for a transfer that would break one of these caps, send it back to the line it came from without asking anybody. Nothing is paid out and we keep no fee. With this off, it waits on the Transfers page for a person instead, which means we are holding somebody else's value while they wait.",
+    fallback: true,
+    validate: boolean(),
+    format: (v) => (v ? "sent back automatically" : "held for a person"),
+  }),
   "payout.auto_approve_max_kobo": define({
     key: "payout.auto_approve_max_kobo",
     group: "Guardrails",
@@ -527,6 +592,53 @@ export const SETTINGS = {
     validate: intBetween(10_000, 1_000_000_000, "kobo"),
     format: kobo,
   }),
+  "sellback.seller_weekly_max_kobo": define({
+    key: "sellback.seller_weekly_max_kobo",
+    group: "Buying back",
+    label: "Most one number may sell in a week",
+    description: "Counted from Monday in Lagos against the selling number. Zero turns it off. A daily cap alone lets the same line sell its full allowance seven days running, which is what a stolen line looks like.",
+    fallback: 10_000_000,
+    validate: intBetween(0, 10_000_000_000, "kobo"),
+    format: (v) => (v === 0 ? "no weekly limit" : kobo(v)),
+  }),
+  "sellback.seller_daily_max_count": define({
+    key: "sellback.seller_daily_max_count",
+    group: "Buying back",
+    label: "Sales one number may make in a day",
+    description: "How many sales one number may make in a Lagos day, whatever they are worth. Zero turns it off. Breaking a large amount into small sales is the first thing anybody tries.",
+    fallback: 5,
+    validate: intBetween(0, 1_000, "count"),
+    format: (v) => (v === 0 ? "no limit on how many" : `${v} sales`),
+  }),
+  "sellback.seller_weekly_max_count": define({
+    key: "sellback.seller_weekly_max_count",
+    group: "Buying back",
+    label: "Sales one number may make in a week",
+    description: "The same count from Monday in Lagos. Zero turns it off.",
+    fallback: 15,
+    validate: intBetween(0, 5_000, "count"),
+    format: (v) => (v === 0 ? "no limit on how many" : `${v} sales`),
+  }),
+  "sellback.bank_max_numbers": define({
+    key: "sellback.bank_max_numbers",
+    group: "Buying back",
+    label: "Phone numbers one bank account may be paid for",
+    description:
+      "One bank account collecting the money for sales from many different lines is the clearest sign of a ring, and the only one that does not depend on judgement. Above this count the sale is held for you with the other numbers named. Zero turns it off.",
+    fallback: 3,
+    validate: intBetween(0, 100, "count"),
+    format: (v) => (v === 0 ? "no limit" : `${v} numbers`),
+  }),
+  "sellback.return_over_cap": define({
+    key: "sellback.return_over_cap",
+    group: "Buying back",
+    label: "Send value over a cap straight back",
+    description:
+      "When value arrives for a sale that breaks one of these caps, send it back to the line it came from without asking anybody. Nothing is owed and no credit is given. With this off it waits here for a person, and we are holding value we have decided not to buy.",
+    fallback: true,
+    validate: boolean(),
+    format: (v) => (v ? "sent back automatically" : "held for a person"),
+  }),
   "sellback.daily_buy_cap_kobo": define({
     key: "sellback.daily_buy_cap_kobo",
     group: "Buying back",
@@ -549,11 +661,21 @@ export const SETTINGS = {
   "sellback.assumed_validity_days": define({
     key: "sellback.assumed_validity_days",
     group: "Buying back",
-    label: "How long we assume bought data lasts",
+    label: "How long we assume data gifted to us lasts",
     description:
-      "Gifted data keeps the validity the seller's own bundle had, which the network never tells us. Bought data is therefore recorded as expiring in this many days, or the bundle's own validity if that is shorter, so the pool is never worth more on paper than it is in practice. Data still on hand after that is written off as a loss you can see.",
-    fallback: 7,
+      "Gifted data keeps the validity the sender's own bundle had, which the network never tells us: a year-long bundle bought eleven months ago arrives with a month left on it. Data gifted to us, whether somebody sold it to us or sent it in for a transfer, is therefore recorded as expiring in this many days, or the bundle's own validity if that is shorter, so the pool is never worth more on paper than it is in practice. Data still on hand after that is written off as a loss you can see. Keep it well under the shortest validity we take, below, because it is a guess and the loss is real.",
+    fallback: 30,
     validate: intBetween(1, 365, "count"),
+    format: (v) => `${v} days`,
+  }),
+  "sellback.min_validity_days": define({
+    key: "sellback.min_validity_days",
+    group: "Buying back",
+    label: "Shortest data validity we will take",
+    description:
+      "A data bundle is only worth buying if we can sell it on before it dies, so we take nothing whose catalogue validity is shorter than this. Six months is 180 days and a year is 365. A bundle with no validity written down is refused whatever this says, because data we cannot date is data we cannot value.",
+    fallback: 180,
+    validate: intBetween(1, 1_095, "count"),
     format: (v) => `${v} days`,
   }),
   "sellback.cash_hold_hours": define({

@@ -15,6 +15,16 @@ fetches; only the provider code is filled in. Mark a bundle "giftable" if a
 sender can gift that bundle to our SIM on that network; that is what lets
 it be sent to us.
 
+Giftable is necessary and not sufficient. Data gifted to us is stock we have
+to sell on before it dies, so **we take nothing whose validity is shorter
+than the floor under Settings, Buying back**, which starts at six months, and
+nothing at all whose validity is blank. Both rules apply whether the data was
+sold to us or sent in to pay for a transfer, because the exposure is the same
+either way, and a bundle that fails either one is offered to nobody and is
+marked on this page. Most Nigerian bundles are thirty days, so at six months
+the only data we take in is the long-dated kind. That is the founder's number
+to set, not ours, and docs/SELLBACK.md says what moving it costs.
+
 ## Three things a person can do
 
 - **Receive a bundle.** The sender picks the bundle the other side should
@@ -39,8 +49,16 @@ leave our SIM by being gifted onward to a number on the same network, if
 the network allows gifted data to be gifted again, and it expires on the
 bundle's validity. It cannot be sold to the provider and cannot be turned
 into airtime. So every gift that lands is a lot: its size, its catalogue
-value, and the day it expires. Data going out of a pool spends the lot
-that expires soonest. What expires unused is written off as a loss the day
+value, and the day it expires.
+
+That day is not the bundle's full validity. Gifted data carries whatever the
+sender had left on it, which the network never tells us: a year-long bundle
+bought eleven months ago arrives with a month to run. So a lot is dated by
+the shorter of the bundle's own life and what you assume gifted data has
+left, under Settings, Buying back. The pool is then never worth more on paper
+than it is in practice, and the write-off comes early rather than never.
+
+Data going out of a pool spends the lot that expires soonest. What expires unused is written off as a loss the day
 it expires, with a line in the ledger, so the Pools page never overstates
 what you own. The checklist warns a week ahead, and the way out is the
 discount on that network's bundles and routing its bundle deliveries to

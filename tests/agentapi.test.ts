@@ -41,7 +41,7 @@ beforeEach(async () => {
     await setSetting(c, "founder", "agent.api_enabled", true);
     await setSetting(c, "founder", "retail.enabled", true);
   });
-  await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: naira(600) }));
+  await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 1 year", sizeMb: 1024, validityDays: 30, priceKobo: naira(600) }));
   agent = (await as("founder", (c) => createAgent(c, AGENT))).agent;
   token = (await as("founder", (c) => createApiKey(c, agent.id, "Till at the front counter", "founder"))).token;
 });
@@ -132,7 +132,7 @@ test("a quote says what a purchase would cost without buying it", async () => {
   assert.equal(airtime.body.affordable, false);
   const bundle = await ask("/api/v1/quote", { body: { number: "08031234567", bundle: "mtn-1gb" } });
   assert.equal(bundle.body.face_value.kobo, naira(600));
-  assert.equal(bundle.body.bundle, "MTN 1GB, 30 days");
+  assert.equal(bundle.body.bundle, "MTN 1GB, 1 year");
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM orders")).rows[0].n, 0, "a quote buys nothing");
   const nothing = await ask("/api/v1/quote", { body: { number: "08031234567" } });
   assert.equal(nothing.status, 400);

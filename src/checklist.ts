@@ -262,6 +262,15 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
     if (heldSales > 0) {
       checks.push({ status: "bad", title: `${heldSales} sale(s) to us held`, detail: "Value has landed that a person has to decide on.", fix: "Command centre, Buying back: buy it anyway, or send it back to the seller's line." });
     }
+    const backByHand = (await db.query<{ n: number; total: number }>("SELECT count(*)::int AS n, coalesce(sum(received_kobo), 0)::bigint AS total FROM sellbacks WHERE state = 'returning' AND return_rail = 'manual'")).rows[0]!;
+    if (backByHand.n > 0) {
+      checks.push({
+        status: "bad",
+        title: `${backByHand.n} sale(s) to send back by hand, ${formatNaira(backByHand.total)}`,
+        detail: "We have decided not to buy this value and no phone could send it back, so it is sitting on our SIM while the seller waits.",
+        fix: "Command centre, Buying back, On their way back: send it from the SIM and record what you sent.",
+      });
+    }
     if (cashOn && cashCap === 0) {
       checks.push({ status: "warn", title: "Cash is switched on but the day's ceiling is nothing", detail: "Sellers can ask for cash, and none can be paid.", fix: "Command centre, Settings, Buying back: set the most cash we will pay in a day, or switch cash off." });
     }
@@ -279,12 +288,15 @@ export async function runChecklist(db: pg.Pool, env: NodeJS.ProcessEnv = process
 
   const stuck = (
     await db.query<{ n: number }>(
-      "SELECT count(*)::int AS n FROM transfers WHERE state IN ('held', 'awaiting_approval', 'payout_failed') OR (state = 'paying_out' AND created_at < now() - interval '1 hour')",
+      `SELECT count(*)::int AS n FROM transfers
+       WHERE state IN ('held', 'awaiting_approval', 'payout_failed')
+          OR (state = 'paying_out' AND created_at < now() - interval '1 hour')
+          OR (state = 'refunding' AND refund_rail = 'manual')`,
     )
   ).rows[0]!.n;
   checks.push(
     stuck === 0
-      ? { status: "ok", title: "No transfer is waiting on a person", detail: "Nothing is held, failed, awaiting approval or stuck paying out." }
+      ? { status: "ok", title: "No transfer is waiting on a person", detail: "Nothing is held, failed, awaiting approval, stuck paying out or waiting to be sent back by hand." }
       : { status: "bad", title: `${stuck} transfer(s) waiting on a person`, detail: "Senders are waiting.", fix: "Command centre, Transfers, Needs a person." },
   );
 

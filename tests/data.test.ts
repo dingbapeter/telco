@@ -51,7 +51,7 @@ beforeEach(async () => {
   await addReceivingNumber("08039990001", "MTN");
   await addReceivingNumber("08029990001", "AIRTEL");
   airtel1gb = await as("founder", (c) => upsertBundle(c, { network: "AIRTEL", code: "airtel-1gb", name: "Airtel 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: naira(500), providerVariationCode: "airt-1gb" }));
-  mtn1gb = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: naira(600), giftable: true }));
+  mtn1gb = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 1 year", sizeMb: 1024, validityDays: 365, priceKobo: naira(600), giftable: true }));
   await as("founder", (c) => setSetting(c, "founder", "network.data_gift_code", { MTN: "*131*{number}*{size}#", AIRTEL: "", GLO: "", "9MOBILE": "" }));
 });
 
@@ -163,6 +163,22 @@ test("a bundle that is not giftable cannot be offered as the thing sent, and a b
   );
 });
 
+test("a transfer cannot be paid for with data that dies too soon to sell on", async () => {
+  // The same rule as buying data back, and for the same reason: data gifted
+  // to us sits in our pool until something takes it out again.
+  const monthly = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-2gb-30", name: "MTN 2GB, 30 days", sizeMb: 2_048, validityDays: 30, priceKobo: naira(1_200), giftable: true }));
+  await assert.rejects(
+    as("sender", (c) => quoteTransfer(c, "sender", { fromNetwork: "MTN", toNetwork: "AIRTEL", senderNumber: "08031234567", recipientNumber: "08021234567", inBundleId: monthly.id })),
+    /We only take data that lasts 180 days or more/,
+  );
+  // And it is never offered as something a sender can send. It can still be
+  // delivered to somebody, which is why only the sending list is read here.
+  const home = await new Browser(base).get("/");
+  const sending = home.text.split('id="send"')[1]!.split("</select>")[0]!;
+  assert.doesNotMatch(sending, /MTN 2GB, 30 days/);
+  assert.match(sending, /MTN 1GB, 1 year/);
+});
+
 test("the phone bridge reads a data gift message and values it from the catalogue", async () => {
   const parsed = parseDataMessage("Dear customer, you have received 1GB data from 08031234567. Enjoy!", "");
   assert.deepEqual(parsed, { sizeMb: 1024, senderNumber: "08031234567" });
@@ -210,8 +226,8 @@ test("the sender's page offers bundles and shows the gift code for a bundle sent
   const r = await b.post("/quote", { sender: "08031234567", from: "MTN", recipient: "08021234567", to: "AIRTEL", amount: "", send: String(mtn1gb.id), receive: "" }, false);
   assert.equal(r.status, 303);
   const text = (await b.get(r.location!)).text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(text, /Now gift the bundle MTN 1GB, 30 days to 08039990001/);
-  assert.match(text, /\*131\*08039990001\*MTN 1GB, 30 days#/);
+  assert.match(text, /Now gift the bundle MTN 1GB, 1 year to 08039990001/);
+  assert.match(text, /\*131\*08039990001\*MTN 1GB, 1 year#/);
   assert.match(text, /We will send N576 of airtime to 08021234567 on Airtel/);
   const out = await b.post("/quote", { sender: "08031234567", from: "MTN", recipient: "08021234567", to: "AIRTEL", amount: "", send: "", receive: String(airtel1gb.id) }, false);
   const text2 = (await b.get(out.location!)).text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");

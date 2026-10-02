@@ -10,7 +10,7 @@ const START_OF_TODAY = "(date_trunc('day', now() AT TIME ZONE 'Africa/Lagos') AT
 
 // Every number on this page is a query run when the page is opened.
 export async function liveNumbers(db: pg.Pool) {
-  const [ledger, today, states, unmatched, sales, floors, earnedTodayKobo] = await Promise.all([
+  const [ledger, today, states, refundsByHand, unmatched, sales, floors, earnedTodayKobo] = await Promise.all([
     balances(db),
     db.query<{ transfers: number; volume: number; fees: number }>(
       `SELECT count(*) FILTER (WHERE state = 'completed')::int AS transfers,
@@ -19,8 +19,16 @@ export async function liveNumbers(db: pg.Pool) {
        FROM transfers WHERE created_at >= ${START_OF_TODAY}`,
     ),
     db.query<{ state: string; n: number }>("SELECT state, count(*)::int AS n FROM transfers GROUP BY state"),
+    // A refund no phone could send is a person's job, not something in
+    // flight, so it is counted with the rest of their work.
+    db.query<{ n: number }>("SELECT count(*)::int AS n FROM transfers WHERE state = 'refunding' AND refund_rail = 'manual'"),
     db.query<{ n: number }>("SELECT count(*)::int AS n FROM inbound_notifications WHERE matched_transfer_id IS NULL AND matched_sellback_id IS NULL"),
-    db.query<{ waiting: number; held: number }>("SELECT count(*) FILTER (WHERE state = 'received' AND outcome = 'cash')::int AS waiting, count(*) FILTER (WHERE state = 'held')::int AS held FROM sellbacks"),
+    db.query<{ waiting: number; held: number; by_hand: number }>(
+      `SELECT count(*) FILTER (WHERE state = 'received' AND outcome = 'cash')::int AS waiting,
+              count(*) FILTER (WHERE state = 'held')::int AS held,
+              count(*) FILTER (WHERE state = 'returning' AND return_rail = 'manual')::int AS by_hand
+       FROM sellbacks`,
+    ),
     getSettingValue(db, "pool.floor_kobo"),
     earnedToday(db),
   ]);
@@ -32,13 +40,14 @@ export async function liveNumbers(db: pg.Pool) {
     owedToNetworks: NETWORK_CODES.map((c) => ({ network: c, kobo: byCode[`owed:${c}`] ?? 0 })),
     revenueAllTime: byCode["revenue:fees"] ?? 0,
     today: today.rows[0]!,
-    needsAPerson: (stateCount["held"] ?? 0) + (stateCount["awaiting_approval"] ?? 0) + (stateCount["payout_failed"] ?? 0),
-    inFlight: (stateCount["inbound_confirmed"] ?? 0) + (stateCount["paying_out"] ?? 0) + (stateCount["refunding"] ?? 0),
+    needsAPerson: (stateCount["held"] ?? 0) + (stateCount["awaiting_approval"] ?? 0) + (stateCount["payout_failed"] ?? 0) + refundsByHand.rows[0]!.n,
+    inFlight: (stateCount["inbound_confirmed"] ?? 0) + (stateCount["paying_out"] ?? 0) + (stateCount["refunding"] ?? 0) - refundsByHand.rows[0]!.n,
     waitingForAirtime: stateCount["awaiting_inbound"] ?? 0,
     unmatched: unmatched.rows[0]!.n,
     owedToSellers: byCode["owed:sellers"] ?? 0,
     sellersWaitingForCash: sales.rows[0]!.waiting,
     salesHeld: sales.rows[0]!.held,
+    salesToSendBackByHand: sales.rows[0]!.by_hand,
     earnedTodayKobo,
     stateCount,
   };
@@ -53,7 +62,7 @@ export function registerOverview(app: App): void {
     const body = html`<h1>Overview</h1>
       <p class="muted">Every figure here is read from the database as the page opens. Times are Lagos time.</p>
       <div class="cards">
-        <div class="card ${n.needsAPerson > 0 ? "bad" : "ok"}"><div class="label">Needs a person</div><div class="value">${n.needsAPerson}</div><a href="/admin/transfers?needs=person">Held, failed or awaiting approval</a></div>
+        <div class="card ${n.needsAPerson > 0 ? "bad" : "ok"}"><div class="label">Needs a person</div><div class="value">${n.needsAPerson}</div><a href="/admin/transfers?needs=person">Held, failed, awaiting approval or waiting to be sent back by hand</a></div>
         <div class="card ${n.unmatched > 0 ? "bad" : ""}"><div class="label">Airtime in, unmatched</div><div class="value">${n.unmatched}</div><a href="/admin/inbound">Look at them</a></div>
         <div class="card"><div class="label">Waiting for airtime</div><div class="value">${n.waitingForAirtime}</div></div>
         <div class="card"><div class="label">In flight</div><div class="value">${n.inFlight}</div></div>
@@ -64,7 +73,7 @@ export function registerOverview(app: App): void {
         <div class="card"><div class="label">Earned today, every line</div><div class="value">${money(n.earnedTodayKobo)}</div><a href="/admin/money">Money</a></div>
         <div class="card ${n.owedToSenders > 0 ? "" : "ok"}"><div class="label">Owed to senders right now</div><div class="value">${money(n.owedToSenders)}</div></div>
         <div class="card ${n.owedToSellers > 0 ? "" : "ok"}"><div class="label">Owed to sellers right now</div><div class="value">${money(n.owedToSellers)}</div><a href="/admin/sellbacks">Buying back</a></div>
-        <div class="card ${n.sellersWaitingForCash + n.salesHeld > 0 ? "bad" : "ok"}"><div class="label">Sellers waiting on us</div><div class="value">${n.sellersWaitingForCash + n.salesHeld}</div><a href="/admin/sellbacks">${n.sellersWaitingForCash} for cash, ${n.salesHeld} held</a></div>
+        <div class="card ${n.sellersWaitingForCash + n.salesHeld + n.salesToSendBackByHand > 0 ? "bad" : "ok"}"><div class="label">Sellers waiting on us</div><div class="value">${n.sellersWaitingForCash + n.salesHeld + n.salesToSendBackByHand}</div><a href="/admin/sellbacks">${n.sellersWaitingForCash} for cash, ${n.salesHeld} held, ${n.salesToSendBackByHand} to send back by hand</a></div>
       </div>
       <h2>Pools</h2>
       <div class="cards">

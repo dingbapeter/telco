@@ -1,7 +1,7 @@
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
 import { formatNaira } from "./money.ts";
-import { NETWORK_CODES, type NetworkCode } from "./settings.ts";
+import { getSettingValue, NETWORK_CODES, type NetworkCode } from "./settings.ts";
 
 export type Bundle = {
   id: number;
@@ -57,6 +57,45 @@ export async function activeBundle(db: Queryable, id: number, network?: string):
   if (!b || !b.active) throw new UserFacingError("no_such_bundle", "That data bundle is not on offer. Choose another.");
   if (network && b.network_code !== network.toUpperCase()) throw new UserFacingError("bundle_network", `That bundle is for ${b.network_code}, not ${network.toUpperCase()}.`);
   return b;
+}
+
+// Data somebody else sends us has to live long enough for us to sell it on
+// again, or we have paid for something that dies on our hands. The floor is a
+// setting the founder moves; a bundle whose validity nobody has written down
+// is refused whatever the floor says, because data we cannot date is data we
+// cannot value, cannot sell with a straight face and cannot write off on
+// time.
+export async function takeInCheck(db: Queryable, bundle: Bundle): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const floor = await getSettingValue(db, "sellback.min_validity_days");
+  if (!bundle.validity_days) {
+    return { ok: false, reason: `We cannot take ${bundle.name} because nobody has recorded how long it lasts. Choose another bundle.` };
+  }
+  if (bundle.validity_days < floor) {
+    return {
+      ok: false,
+      reason: `We only take data that lasts ${floor} days or more, and ${describeBundle(bundle)} lasts ${bundle.validity_days} days. Choose a bundle with a longer life.`,
+    };
+  }
+  return { ok: true };
+}
+
+// How long to treat data gifted to us as lasting. Gifted data carries
+// whatever validity the sender's own bundle had left, which the network never
+// tells us, so we assume the founder's figure and never more than the
+// bundle's own life. The same assumption whether the data came in on a
+// transfer or was sold to us: it is the same unknown either way.
+export async function assumedValidityDays(db: Queryable, bundle: { validity_days: number | null } | undefined): Promise<number> {
+  const assumed = await getSettingValue(db, "sellback.assumed_validity_days");
+  return Math.min(assumed, bundle?.validity_days ?? assumed);
+}
+
+// The bundles we are willing to take in: giftable, on offer, and long enough
+// lived. Every list a person chooses from uses this, so nobody is offered a
+// bundle that would be refused after they had sent it.
+export async function takeableBundles(db: Queryable, network?: string): Promise<Bundle[]> {
+  const floor = await getSettingValue(db, "sellback.min_validity_days");
+  const all = await listBundles(db, { ...(network ? { network } : {}), activeOnly: true, giftableOnly: true });
+  return all.filter((b) => b.validity_days !== null && b.validity_days >= floor);
 }
 
 export type BundleInput = { network: string; code: string; name: string; sizeMb: number; validityDays?: number | null; priceKobo: number; providerVariationCode?: string | null; giftable?: boolean; active?: boolean; source?: "manual" | "vtpass" };

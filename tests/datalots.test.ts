@@ -15,7 +15,7 @@ beforeEach(async () => {
   await clean();
   await pool.query("TRUNCATE data_lots, orders, order_events, data_bundles RESTART IDENTITY CASCADE");
   await addReceivingNumber("08039990001", "MTN");
-  mtn1gb = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB", sizeMb: 1024, validityDays: 30, priceKobo: naira(600), giftable: true }));
+  mtn1gb = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB", sizeMb: 1024, validityDays: 365, priceKobo: naira(600), giftable: true }));
 });
 after(() => pool.end());
 
@@ -25,7 +25,9 @@ async function giftedTransfer() {
   return transfer;
 }
 
-test("a gifted bundle becomes a lot worth its catalogue value that expires when the bundle does", async () => {
+test("a gifted bundle becomes a lot worth its catalogue value that expires on the shorter of what we assume and the bundle's own life", async () => {
+  // The bundle lasts a year, but data gifted to us has already been running
+  // for as long as the sender held it, so the lot is dated by what we assume.
   const t = await giftedTransfer();
   const lots = await openLots(pool);
   assert.equal(lots.length, 1);
@@ -33,6 +35,7 @@ test("a gifted bundle becomes a lot worth its catalogue value that expires when 
   assert.equal(lots[0]!.source, t.reference);
   const days = (new Date(lots[0]!.expires_at!).getTime() - Date.now()) / 86_400_000;
   assert.ok(days > 29.9 && days <= 30, `expires in ${days} days`);
+  assert.equal(mtn1gb.validity_days, 365, "and not the bundle's own year");
 });
 
 test("data going out of a pool spends the lot that expires soonest first", async () => {

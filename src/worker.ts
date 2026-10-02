@@ -6,6 +6,7 @@ import { writeOffExpired } from "./datalots.ts";
 import { expireCommands, PhoneRail } from "./sendingphone.ts";
 import { getSettingValues, type NetworkCode } from "./settings.ts";
 import { completeDelivery, failDelivery, startDelivery, type Order } from "./orders.ts";
+import { completeSellbackReturn, type Sellback } from "./sellbacks.ts";
 import { completePayout, completeRefund, failPayout, getTransfer, startPayout, type Transfer } from "./transfers.ts";
 
 export type CycleReport = { checked: number; sent: number; delivered: number; retried: number; failed: number; skipped: string[] };
@@ -64,6 +65,8 @@ export async function runPayoutCycle(db: pg.Pool, railOrRails: PayoutRail | Rail
 
   // Refunds: airtime or a bundle back to the sender, through the phone.
   await runRefunds(db, rails, report, now);
+  // And the same for value somebody sold us that we decided not to buy.
+  await runSellbackReturns(db, rails, report, now);
 
   // Then transfers waiting to be paid, including failed ones whose wait is over.
   const due = await db.query<Transfer>(
@@ -131,6 +134,68 @@ async function runRefunds(db: pg.Pool, rails: Rails, report: CycleReport, now: D
     const result = await rails.phone.send({ requestId, network: t.from_network, number: t.sender_number, amountKobo: t.received_kobo!, bundle: inBundle ? { variationCode: inBundle.code, name: inBundle.name } : undefined });
     if (result.kind !== "processing") {
       await withActor(ACTOR, (c) => c.query("UPDATE transfers SET refund_request_id = NULL, refund_rail = 'manual', payout_last_error = $2 WHERE id = $1", [t.id, result.message]), db);
+      report.failed += 1;
+    }
+  }
+}
+
+// Value bought back and then refused goes home the same way a refund does:
+// to the seller's own line, from the pool it landed in, through the phone.
+// Only ever queued once, and a phone that cannot do it hands the job to a
+// person rather than leaving it in limbo.
+async function runSellbackReturns(db: pg.Pool, rails: Rails, report: CycleReport, now: Date): Promise<void> {
+  const waiting = await db.query<Sellback>(
+    `SELECT s.* FROM sellbacks s WHERE s.state = 'returning' AND s.return_request_id IS NOT NULL
+       AND (SELECT max(at) FROM sellback_events e WHERE e.sellback_id = s.id) < $1::timestamptz - interval '45 seconds' ORDER BY s.id LIMIT 20`,
+    [now],
+  );
+  for (const s of waiting.rows) {
+    report.checked += 1;
+    const result = await rails.phone.check(s.return_request_id!);
+    if (result.kind === "delivered") {
+      const done = await withActor(ACTOR, (c) => completeSellbackReturn(c, ACTOR, s.id, `sent back by the ${s.network_code} phone, ${result.reference}`), db);
+      if (done) report.delivered += 1;
+    } else if (result.kind === "failed" || result.kind === "retry") {
+      await withActor(
+        ACTOR,
+        (c) =>
+          c.query("UPDATE sellbacks SET return_request_id = NULL, return_rail = 'manual', return_last_error = $2 WHERE id = $1 AND state = 'returning'", [
+            s.id,
+            `Sending it back through the phone did not complete: ${result.message}`,
+          ]),
+        db,
+      );
+      report.failed += 1;
+    }
+  }
+  const due = await db.query<Sellback>("SELECT * FROM sellbacks WHERE state = 'returning' AND return_request_id IS NULL AND coalesce(return_rail, '') <> 'manual' ORDER BY created_at LIMIT 10");
+  for (const s of due.rows) {
+    if (!(await rails.phone.available(s.network_code))) {
+      await withActor(
+        ACTOR,
+        (c) =>
+          c.query("UPDATE sellbacks SET return_rail = 'manual', return_last_error = $2 WHERE id = $1 AND state = 'returning' AND return_request_id IS NULL", [
+            s.id,
+            `No phone on ${s.network_code} can send, so this one is for a person.`,
+          ]),
+        db,
+      );
+      report.skipped.push(`${s.reference}: sending it back waits for a person; no phone on ${s.network_code} can send.`);
+      continue;
+    }
+    const bundle = s.bundle_id ? (await db.query<{ code: string; name: string }>("SELECT code, name FROM data_bundles WHERE id = $1", [s.bundle_id])).rows[0] : undefined;
+    const requestId = `sellback-return-${newRequestId(now)}`;
+    await withActor(ACTOR, (c) => c.query("UPDATE sellbacks SET return_rail = 'phone', return_request_id = $2 WHERE id = $1 AND state = 'returning' AND return_request_id IS NULL", [s.id, requestId]), db);
+    report.sent += 1;
+    const result = await rails.phone.send({
+      requestId,
+      network: s.network_code,
+      number: s.seller_number,
+      amountKobo: s.received_kobo!,
+      bundle: bundle ? { variationCode: bundle.code, name: bundle.name } : undefined,
+    });
+    if (result.kind !== "processing") {
+      await withActor(ACTOR, (c) => c.query("UPDATE sellbacks SET return_request_id = NULL, return_rail = 'manual', return_last_error = $2 WHERE id = $1", [s.id, result.message]), db);
       report.failed += 1;
     }
   }

@@ -52,8 +52,21 @@ const MUTATIONS: Mutation[] = [
   { name: "pool balance check removed", file: "src/transfers.ts", find: "  if (available < payout) {", replace: "  if (available < payout && false) {", suite: "tests/transfers.test.ts" },
   { name: "approval threshold ignored", file: "src/transfers.ts", find: "if (payout > autoMax && !t.approved_by) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
   { name: "daily payout ceiling ignored", file: "src/transfers.ts", find: "if (paidToday.rows[0]!.total + payout > ceiling) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
-  { name: "sender daily limit ignored", file: "src/transfers.ts", find: "if (usedToday + amount > dailyMax) {", replace: "if (false) {", suite: "tests/transfers.test.ts" },
-  { name: "expired quotes count against the daily limit", file: "src/transfers.ts", find: "WHERE sender_number = $1 AND created_at >= ${START_OF_TODAY} AND state NOT IN ('expired', 'refunded')`,", replace: "WHERE sender_number = $1 AND created_at >= ${START_OF_TODAY}`,", suite: "tests/transfers.test.ts" },
+  { name: "sender daily limit ignored", file: "src/limits.ts", find: "  if (overValue(dayMax, from.dayValue, input.amountKobo)) {", replace: "  if (false) {", suite: "tests/transfers.test.ts" },
+  { name: "expired and returned transfers count against the caps", file: "src/limits.ts", find: "const dead = table === \"transfers\" ? \"('expired', 'refunding', 'refunded')\"", replace: "const dead = table === \"transfers\" ? \"('nothing')\"", suite: "tests/transfers.test.ts" },
+  { name: "the week's money cap ignored", file: "src/limits.ts", find: "  if (overValue(weekMax, from.weekValue, input.amountKobo)) {", replace: "  if (false) {", suite: "tests/limits.test.ts" },
+  { name: "the day's count of transfers ignored", file: "src/limits.ts", find: "  if (overCount(dayCount, from.dayCount)) {", replace: "  if (false) {", suite: "tests/limits.test.ts" },
+  { name: "the week's count of transfers ignored", file: "src/limits.ts", find: "  if (overCount(weekCount, from.weekCount)) {", replace: "  if (false) {", suite: "tests/limits.test.ts" },
+  { name: "a receiving number can be sent any amount in a day", file: "src/limits.ts", find: "  if (overValue(toDayMax, to.dayValue, input.amountKobo)) {", replace: "  if (false) {", suite: "tests/limits.test.ts" },
+  { name: "a receiving number can be sent any number of transfers in a day", file: "src/limits.ts", find: "  if (overCount(toDayCount, to.dayCount)) {", replace: "  if (false) {", suite: "tests/limits.test.ts" },
+  { name: "a cap set to zero still refuses", file: "src/limits.ts", find: "  return cap > 0 && already + adding > cap;", replace: "  return already + adding > cap;", suite: "tests/limits.test.ts" },
+  { name: "a transfer counted against its own cap", file: "src/limits.ts", find: "AND state NOT IN ${dead} AND id <> $2`,", replace: "AND state NOT IN ${dead}`,", suite: "tests/limits.test.ts" },
+  { name: "the week counted from the beginning of time", file: "src/limits.ts", find: "WHERE ${column} = $1 AND created_at >= ${START_OF_WEEK}", replace: "WHERE ${column} = $1 AND ('x' IS NOT NULL)", suite: "tests/limits.test.ts" },
+  { name: "two amounts for one sender counted without a lock", file: "src/transfers.ts", find: "  await lockForCaps(db, t.sender_number, t.recipient_number);", replace: "", suite: "tests/limits.test.ts" },
+  { name: "two quotes for one sender counted without a lock", file: "src/transfers.ts", find: "  await lockForCaps(db, sender, recipient);", replace: "", suite: "tests/limits.test.ts" },
+  { name: "the caps not checked against what really arrived", file: "src/transfers.ts", find: "  if (breach) return { fee: null, holdReason: breach.reason };", replace: "  if (false) return { fee: null, holdReason: breach?.reason ?? null };", suite: "tests/limits.test.ts" },
+  { name: "value over a cap kept instead of sent back", file: "src/transfers.ts", find: "  if (isCapReason(holdReason) && (await getSettingValue(db, \"transfer.return_over_limit\"))) {", replace: "  if (false) {", suite: "tests/limits.test.ts" },
+  { name: "value over a cap sent back even with the switch off", file: "src/transfers.ts", find: "if (isCapReason(holdReason) && (await getSettingValue(db, \"transfer.return_over_limit\"))) {", replace: "if (isCapReason(holdReason)) {", suite: "tests/limits.test.ts" },
   { name: "late airtime in the grace period not matched", file: "src/transfers.ts", find: "AND state IN ('awaiting_inbound', 'expired')\n           AND expires_at + make_interval(mins => $5) > now()", replace: "AND state IN ('awaiting_inbound')\n           AND expires_at + make_interval(mins => $5) > now()", suite: "tests/transfers.test.ts" },
   { name: "grace period never ends", file: "src/transfers.ts", find: "AND expires_at + make_interval(mins => $5) > now()", replace: "AND ($5::int IS NOT NULL)", suite: "tests/transfers.test.ts" },
   { name: "fee not recomputed on the amount that arrived", file: "src/transfers.ts", find: "return { fee: computeFee(amount, await loadFeeRule(db, t.from_network, t.to_network)), holdReason: null };", replace: "return { fee: computeFee(t.requested_kobo, await loadFeeRule(db, t.from_network, t.to_network)), holdReason: null };", suite: "tests/transfers.test.ts" },
@@ -121,7 +134,7 @@ const MUTATIONS: Mutation[] = [
   { name: "expired data never written off", file: "src/datalots.ts", find: "WHERE state = 'open' AND expires_at IS NOT NULL AND expires_at < $1 AND remaining_value_kobo > 0 FOR UPDATE SKIP LOCKED", replace: "WHERE false FOR UPDATE SKIP LOCKED", suite: "tests/datalots.test.ts" },
   { name: "expired data written off twice", file: "src/datalots.ts", find: "await db.query(\"UPDATE data_lots SET state = 'expired', written_off_at = now() WHERE id = $1\", [lot.id]);", replace: "", suite: "tests/datalots.test.ts" },
   { name: "data spent newest first", file: "src/datalots.ts", find: "ORDER BY expires_at NULLS LAST, id FOR UPDATE\", [network]);", replace: "ORDER BY expires_at DESC NULLS LAST, id FOR UPDATE\", [network]);", suite: "tests/datalots.test.ts" },
-  { name: "gifted data lands without a lot", file: "src/transfers.ts", find: "    if (b) await openLot(db, { network: updated.from_network, bundleId: b.id, sizeMb: b.size_mb, valueKobo: amount, validityDays: b.validity_days, source: updated.reference });", replace: "", suite: "tests/datalots.test.ts" },
+  { name: "gifted data lands without a lot", file: "src/transfers.ts", find: "    if (b) await openLot(db, { network: updated.from_network, bundleId: b.id, sizeMb: b.size_mb, valueKobo: amount, validityDays: await assumedValidityDays(db, b), source: updated.reference });", replace: "", suite: "tests/datalots.test.ts" },
   { name: "lot expiry ignores the bundle's validity", file: "src/datalots.ts", find: "CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(days => $5) END", replace: "now() + interval '365 days'", suite: "tests/datalots.test.ts" },
   { name: "commission paid twice", file: "src/agents.ts", find: "idempotencyKey: `transfer:${transferId}:commission`,", replace: "idempotencyKey: `transfer:${transferId}:commission:${Date.now()}`,", suite: "tests/agents.test.ts" },
   { name: "commission not paid on completion", file: "src/transfers.ts", find: "  if (moved.agent_id) await bookCommission(db, moved.agent_id, moved.id, moved.reference, moved.platform_share_kobo!);", replace: "", suite: "tests/agents.test.ts" },
@@ -164,7 +177,25 @@ const MUTATIONS: Mutation[] = [
   { name: "value below the smallest we buy taken anyway", file: "src/sellbacks.ts", find: "  if (candidate.kind === \"airtime\" && amountKobo < min) holdReason = \"amount_below_minimum\";", replace: "  if (false) holdReason = \"amount_below_minimum\";", suite: "tests/sellback.test.ts" },
   { name: "value from a blocked number bought anyway", file: "src/sellbacks.ts", find: "  else if (await isBlocked(db, candidate.seller_number)) holdReason = \"seller_blocked\";", replace: "", suite: "tests/sellback.test.ts" },
   { name: "a blocked number quoted a rate", file: "src/sellbacks.ts", find: "  if (await isBlocked(db, seller)) throw new UserFacingError(\"seller_blocked\"", replace: "  if (false) throw new UserFacingError(\"seller_blocked\"", suite: "tests/sellback.test.ts" },
-  { name: "one number may sell as much as it likes in a day", file: "src/sellbacks.ts", find: "  if (sellerToday + face > sellerDaily) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "one number may sell as much as it likes in a day", file: "src/limits.ts", find: "  if (overValue(dayMax, t.dayValue, input.faceKobo)) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "one number may sell as much as it likes in a week", file: "src/limits.ts", find: "  if (overValue(weekMax, t.weekValue, input.faceKobo)) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "one number may make as many sales a day as it likes", file: "src/limits.ts", find: "  if (overCount(dayCount, t.dayCount)) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "the caps not checked against the value that really arrived", file: "src/sellbacks.ts", find: "    if (breach) holdReason = breach.reason;", replace: "    if (false) holdReason = breach?.reason ?? null;", suite: "tests/sellback.test.ts" },
+  { name: "bought value over a cap kept instead of sent back", file: "src/sellbacks.ts", find: "  if (returnAtOnce(holdReason) && (await getSettingValue(db, \"sellback.return_over_cap\"))) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "bought value over a cap sent back even with the switch off", file: "src/sellbacks.ts", find: "if (returnAtOnce(holdReason) && (await getSettingValue(db, \"sellback.return_over_cap\"))) {", replace: "if (returnAtOnce(holdReason)) {", suite: "tests/sellback.test.ts" },
+  { name: "more than we buy at once kept for a person instead of going back", file: "src/sellbacks.ts", find: "  return isCapReason(reason) || reason === \"amount_above_maximum\";", replace: "  return isCapReason(reason);", suite: "tests/sellback.test.ts" },
+  { name: "one bank account may collect for any number of lines", file: "src/sellbacks.ts", find: "  return others.length + 1 > most;", replace: "  return false;", suite: "tests/sellback.test.ts" },
+  { name: "cash taken without an account number to pay into", file: "src/sellbacks.ts", find: "    if (!accountDigits) throw new UserFacingError(\"no_account_number\"", replace: "    if (false) throw new UserFacingError(\"no_account_number\"", suite: "tests/sellback.test.ts" },
+  { name: "a phone number read as a bank account number", file: "src/sellbacks.ts", find: "  const m = /(?<!\\d)(\\d{10})(?!\\d)/.exec(text.replace(/[\\s-]/g, \"\"));", replace: "  const m = /(\\d{10})/.exec(text.replace(/[\\s-]/g, \"\"));", suite: "tests/sellback.test.ts" },
+  { name: "a return sent by a phone can also be sent by hand", file: "src/sellbacks.ts", find: "    if (rows[0]?.return_rail !== \"manual\") {", replace: "    if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "a return taken over after a phone already has it", file: "src/sellbacks.ts", find: "WHERE id = $1 AND state = 'returning' AND return_request_id IS NULL AND coalesce(return_rail, '') <> 'manual'", replace: "WHERE id = $1 AND state = 'returning'", suite: "tests/sellback.test.ts" },
+  { name: "data sent back leaves its lot open to be written off twice", file: "src/sellbacks.ts", find: "  if (moved.kind === \"data\") await consumeLots(db, moved.network_code, moved.received_kobo!);", replace: "", suite: "tests/sellback.test.ts" },
+  { name: "short dated data bought anyway", file: "src/bundles.ts", find: "  if (bundle.validity_days < floor) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "data nobody has dated bought anyway", file: "src/bundles.ts", find: "  if (!bundle.validity_days) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
+  { name: "short dated data still offered to sellers", file: "src/bundles.ts", find: "  return all.filter((b) => b.validity_days !== null && b.validity_days >= floor);", replace: "  return all;", suite: "tests/sellback.test.ts" },
+  { name: "short dated data accepted as payment for a transfer", file: "src/transfers.ts", find: "    const lives = await takeInCheck(db, inBundle);", replace: "    const lives = { ok: true } as Awaited<ReturnType<typeof takeInCheck>>;", suite: "tests/data.test.ts" },
+  { name: "data gifted in for a transfer dated by the bundle's full life", file: "src/bundles.ts", find: "  return Math.min(assumed, bundle?.validity_days ?? assumed);", replace: "  return bundle?.validity_days ?? assumed;", suite: "tests/datalots.test.ts" },
+  { name: "four figures with no comma read as three", file: "src/bridge.ts", find: "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?)", replace: "(?<amount>\\d{1,3}(?:,\\d{3})*(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?)", suite: "tests/bridge.test.ts" },
   { name: "the day's buying ceiling ignored", file: "src/sellbacks.ts", find: "  if (boughtToday + face > cap) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
   { name: "what we buy does not count against the SIM's daily cap", file: "src/receiving.ts", find: "  + coalesce((SELECT sum(coalesce(s.received_kobo, s.face_kobo)) FROM sellbacks s", replace: "  + coalesce((SELECT sum(0) FROM sellbacks s", suite: "tests/sellback.test.ts" },
   { name: "a sale takes airtime a transfer was waiting for", file: "src/transfers.ts", find: "  if (!candidate) {\n    const bought = await matchSellback(", replace: "  if (true) {\n    const bought = await matchSellback(", suite: "tests/sellback.test.ts" },
@@ -174,9 +205,9 @@ const MUTATIONS: Mutation[] = [
   { name: "a credit code spent past what it holds", file: "src/sellbacks.ts", find: "  if (note.remaining_kobo < amountKobo) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
   { name: "a credit code read without a lock, so two orders share one balance", file: "src/sellbacks.ts", find: "SELECT * FROM credit_notes WHERE code = $1 FOR UPDATE\", [wanted]", replace: "SELECT * FROM credit_notes WHERE code = $1\", [wanted]", suite: "tests/sellback.test.ts" },
   { name: "stopping a credit code leaves the money owed to nobody", file: "src/sellbacks.ts", find: "  if (left > 0) {\n    await postJournal(db, {", replace: "  if (false) {\n    await postJournal(db, {", suite: "tests/sellback.test.ts" },
-  { name: "bought data recorded with the bundle's full validity", file: "src/sellbacks.ts", find: "    const validity = Math.min(assumed, bundle?.validity_days ?? assumed);", replace: "    const validity = bundle?.validity_days ?? assumed;", suite: "tests/sellback.test.ts" },
+  { name: "bought data recorded with the bundle's full validity", file: "src/bundles.ts", find: "  return Math.min(assumed, bundle?.validity_days ?? assumed);", replace: "  return bundle?.validity_days ?? assumed;", suite: "tests/sellback.test.ts" },
   { name: "margin on a purchase never booked", file: "src/sellbacks.ts", find: "  if (margin > 0) postings.push({ account: \"revenue:sellback_margin\", amountKobo: -margin });", replace: "", suite: "tests/sellback.test.ts" },
-  { name: "the phone's record cannot hold what buying back answers", file: "migrations/0013_sellbacks.sql", find: "'recorded_by_hand', 'bought', 'bought_held'));", replace: "'recorded_by_hand'));", suite: "tests/sellback.test.ts" },
+  { name: "the phone's record cannot hold what buying back answers", file: "migrations/0016_laundering_caps.sql", find: "'bought', 'bought_held', 'returned', 'bought_returned'));", replace: "'bought'));", suite: "tests/sellback.test.ts" },
   { name: "a refund of credit paid out in cash instead of back onto the code", file: "src/orders.ts", find: "  if (o.payment_method === \"credit\" && o.credit_code) {", replace: "  if (false) {", suite: "tests/sellback.test.ts" },
   { name: "a stopped credit code takes a refund back", file: "src/sellbacks.ts", find: "  if (!note || note.state === \"voided\") return undefined;", replace: "  if (!note) return undefined;", suite: "tests/sellback.test.ts" },
   { name: "the money report counts what is owed to other people as ours", file: "src/report.ts", find: "  const ownKobo = heldKobo - owedKobo;", replace: "  const ownKobo = heldKobo;", suite: "tests/report.test.ts" },
@@ -210,7 +241,19 @@ const MUTATIONS: Mutation[] = [
 const only = process.argv[2];
 const results: { name: string; suite: string; outcome: "red" | "GREEN" | "did not apply" }[] = [];
 
-for (const m of MUTATIONS) {
+// The whole list takes hours, because each mutation rebuilds the test
+// database and runs a suite. MUTATION_SHARD=2/3 runs every third mutation
+// starting from the second, so three copies of the repository, each with its
+// own DATABASE_URL, can share the work. Sharding needs a copy per shard: two
+// shards in one folder would edit the same files.
+const shard = process.env["MUTATION_SHARD"];
+const [shardIndex, shardCount] = shard ? shard.split("/").map(Number) : [1, 1];
+if (!shardIndex || !shardCount || shardIndex < 1 || shardIndex > shardCount) {
+  throw new Error(`MUTATION_SHARD must look like 2/3; got ${shard}`);
+}
+
+for (const [position, m] of MUTATIONS.entries()) {
+  if (position % shardCount !== shardIndex - 1) continue;
   if (only && !m.name.includes(only)) continue;
   const edits: Required<Edit>[] = [{ file: m.file, find: m.find, replace: m.replace }, ...(m.also ?? []).map((e) => ({ file: e.file ?? m.file, find: e.find, replace: e.replace }))];
   const files = [...new Set(edits.map((e) => e.file))];

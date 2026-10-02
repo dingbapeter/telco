@@ -1,12 +1,13 @@
 import { randomInt } from "node:crypto";
 import type pg from "pg";
-import { activeBundle, describeBundle, getBundle, type Bundle } from "./bundles.ts";
-import { openLot } from "./datalots.ts";
+import { activeBundle, assumedValidityDays, describeBundle, getBundle, takeInCheck, type Bundle } from "./bundles.ts";
+import { consumeLots, openLot } from "./datalots.ts";
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
 import { postJournal } from "./ledger.ts";
 import { applyBasisPoints, assertKobo, formatNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
+import { isCapReason, sellerCapBreach } from "./limits.ts";
 import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
 import { chooseReceivingNumber, START_OF_TODAY } from "./receiving.ts";
 
@@ -19,7 +20,7 @@ import { chooseReceivingNumber, START_OF_TODAY } from "./receiving.ts";
 // same rule the transfer side follows and the only proof the value really
 // landed.
 
-export type SellbackState = "awaiting_inbound" | "expired" | "held" | "received" | "settled" | "paid" | "returned" | "cancelled";
+export type SellbackState = "awaiting_inbound" | "expired" | "held" | "received" | "settled" | "paid" | "returning" | "returned" | "cancelled";
 
 export type Sellback = {
   id: number;
@@ -46,6 +47,14 @@ export type Sellback = {
   settled_at: Date | null;
   settled_by: string | null;
   payout_reference: string | null;
+  // Sending value back: which rail has it and the request id that stops it
+  // being sent twice, exactly as a refund on the transfer side works.
+  return_rail: string | null;
+  return_request_id: string | null;
+  return_last_error: string | null;
+  // The account number inside what the seller typed, kept on its own so one
+  // account collecting for many different lines can be counted.
+  bank_account_digits: string | null;
 };
 
 export type CreditNote = {
@@ -103,6 +112,28 @@ export async function getSellback(db: Queryable, id: number): Promise<Sellback |
 
 export async function getSellbackByReference(db: Queryable, reference: string): Promise<Sellback | undefined> {
   return (await db.query<Sellback>("SELECT * FROM sellbacks WHERE reference = $1", [reference.trim().toUpperCase()])).rows[0];
+}
+
+// The account number inside what a seller typed. Nigerian bank accounts are
+// ten digits, so the one run of exactly ten digits is it. Spaces and dashes
+// are taken out first because people write account numbers in groups. A
+// phone number is eleven digits and is left alone.
+export function bankAccountDigits(text: string): string | undefined {
+  const m = /(?<!\d)(\d{10})(?!\d)/.exec(text.replace(/[\s-]/g, ""));
+  return m?.[1];
+}
+
+// The other numbers that have sold to us for the same bank account. One
+// account collecting the money for sales from many lines is the clearest
+// sign of a ring, and the only one that does not rest on anybody's judgement.
+export async function otherNumbersOnAccount(db: Queryable, digits: string, exceptNumber: string): Promise<string[]> {
+  const { rows } = await db.query<{ seller_number: string }>(
+    `SELECT DISTINCT seller_number FROM sellbacks
+     WHERE bank_account_digits = $1 AND seller_number <> $2 AND state NOT IN ('expired', 'cancelled')
+     ORDER BY seller_number`,
+    [digits, exceptNumber],
+  );
+  return rows.map((r) => r.seller_number);
 }
 
 export async function isBlocked(db: Queryable, number: string): Promise<boolean> {
@@ -183,13 +214,12 @@ export type SellbackQuote = { sellback: Sellback; bundle?: Bundle | undefined; p
 export async function quoteSellback(db: Client, actor: string, input: SellbackInput): Promise<SellbackQuote> {
   const network = input.network.toUpperCase();
   if (!isNetwork(network)) throw new UserFacingError("unknown_network", "Choose the network the airtime or data is on.");
-  const [airtimeOn, dataOn, cashOn, min, max, sellerDaily, buyCaps, windowMinutes, cashCap] = await getSettingValues(db, [
+  const [airtimeOn, dataOn, cashOn, min, max, buyCaps, windowMinutes, cashCap] = await getSettingValues(db, [
     "sellback.airtime_enabled",
     "sellback.data_enabled",
     "sellback.cash_enabled",
     "sellback.min_kobo",
     "sellback.max_kobo",
-    "sellback.seller_daily_max_kobo",
     "sellback.daily_buy_cap_kobo",
     "sellback.window_minutes",
     "sellback.cash_daily_cap_kobo",
@@ -203,14 +233,23 @@ export async function quoteSellback(db: Client, actor: string, input: SellbackIn
   // Said plainly, without saying what it is about this number: somebody
   // told they are blocked and why would simply use another line.
   if (await isBlocked(db, seller)) throw new UserFacingError("seller_blocked", "We cannot buy from this number. If you believe that is a mistake, keep your receipt and contact us.");
+  let accountDigits: string | undefined;
   if (input.outcome === "cash") {
     if (!cashOn || cashCap === 0) throw new UserFacingError("no_cash", "We are only paying in credit at the moment, which you can spend on airtime or data for any number.");
     if (!input.bankDetails?.trim()) throw new UserFacingError("missing_bank", "Give the bank, account number and account name the money should go to.");
     if (input.bankDetails.trim().length > 200) throw new UserFacingError("long_bank", "Keep the bank details under two hundred characters.");
+    // Without the account number there is nothing to pay into, and nothing
+    // to count when one account starts collecting for many lines.
+    accountDigits = bankAccountDigits(input.bankDetails);
+    if (!accountDigits) throw new UserFacingError("no_account_number", "Put the ten digit account number in with the bank name, like Access 0123456789 Ada Obi.");
   }
 
   const bundle = input.kind === "data" ? await activeBundle(db, input.bundleId ?? 0, network) : undefined;
   if (bundle && !bundle.giftable) throw new UserFacingError("not_giftable", `${describeBundle(bundle)} cannot be gifted to us on ${network}. Choose a bundle marked as giftable.`);
+  if (bundle) {
+    const lives = await takeInCheck(db, bundle);
+    if (!lives.ok) throw new UserFacingError("validity_too_short", lives.reason);
+  }
   const face = bundle ? bundle.price_kobo : assertKobo(input.amountKobo ?? 0);
   if (face <= 0) throw new UserFacingError("no_amount", "Enter how much airtime you want to sell.");
   if (face < min) throw new UserFacingError("below_minimum", `The smallest we buy is ${formatNaira(min)}.`);
@@ -222,17 +261,10 @@ export async function quoteSellback(db: Client, actor: string, input: SellbackIn
   if (payKobo <= 0) throw new UserFacingError("too_small_to_pay", "That is too small for us to pay anything for.");
 
   // One seller at a time, or two quotes asked for together would each see
-  // the day's total without the other and both pass the limit.
+  // the totals without the other and both pass the caps.
   await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`seller:${seller}`]);
-  const sellerToday = (await db.query<{ total: number }>(
-    `SELECT coalesce(sum(coalesce(received_kobo, face_kobo)), 0)::bigint AS total FROM sellbacks
-     WHERE seller_number = $1 AND created_at >= ${START_OF_TODAY} AND state NOT IN ('expired', 'cancelled', 'returned')`,
-    [seller],
-  )).rows[0]!.total;
-  if (sellerToday + face > sellerDaily) {
-    const left = Math.max(0, sellerDaily - sellerToday);
-    throw new UserFacingError("seller_daily_limit", `This number can sell ${formatNaira(sellerDaily)} a day and has ${formatNaira(left)} left today.`);
-  }
+  const breach = await sellerCapBreach(db, { sellerNumber: seller, faceKobo: face });
+  if (breach) throw new UserFacingError(breach.reason, breach.message);
 
   const cap = buyCaps[network];
   if (cap === 0) throw new UserFacingError("no_buy_cap", `We are not buying on ${network} at the moment.`);
@@ -251,9 +283,9 @@ export async function quoteSellback(db: Client, actor: string, input: SellbackIn
   }
 
   const { rows } = await db.query<Sellback>(
-    `INSERT INTO sellbacks (reference, network_code, seller_number, receiving_number, kind, bundle_id, face_kobo, rate_basis_points, quoted_pay_kobo, outcome, bank_details, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now() + make_interval(mins => $12)) RETURNING *`,
-    [newSellbackReference(), network, seller, receivingNumber, input.kind, bundle?.id ?? null, face, check.rate, payKobo, input.outcome, input.outcome === "cash" ? input.bankDetails!.trim() : null, windowMinutes],
+    `INSERT INTO sellbacks (reference, network_code, seller_number, receiving_number, kind, bundle_id, face_kobo, rate_basis_points, quoted_pay_kobo, outcome, bank_details, bank_account_digits, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now() + make_interval(mins => $13)) RETURNING *`,
+    [newSellbackReference(), network, seller, receivingNumber, input.kind, bundle?.id ?? null, face, check.rate, payKobo, input.outcome, input.outcome === "cash" ? input.bankDetails!.trim() : null, accountDigits ?? null, windowMinutes],
   );
   const sellback = rows[0]!;
   await recordEvent(db, sellback.id, null, "awaiting_inbound", actor, { face_kobo: face, rate_basis_points: check.rate, pay_kobo: payKobo, outcome: input.outcome, bundle: bundle?.code ?? null });
@@ -301,6 +333,17 @@ async function bookSellback(db: Client, actor: string, candidate: Sellback, amou
   else if (amountKobo > max) holdReason = "amount_above_maximum";
   else if (pay <= 0) holdReason = "too_small_to_pay";
   else if (await isBlocked(db, candidate.seller_number)) holdReason = "seller_blocked";
+  else {
+    // The caps again, against what really arrived. A seller can be quoted
+    // for one amount and send another, and can send without being quoted at
+    // all, so this is the check that actually holds. The same lock the quote
+    // takes, so two messages for one seller arriving together cannot each
+    // miss the other.
+    await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`seller:${candidate.seller_number}`]);
+    const breach = await sellerCapBreach(db, { sellerNumber: candidate.seller_number, faceKobo: amountKobo, excludeSellbackId: candidate.id });
+    if (breach) holdReason = breach.reason;
+    else if (await accountCollectingForTooMany(db, candidate)) holdReason = "bank_account_shared";
+  }
   const moved = await claim(db, candidate.id, ["awaiting_inbound", "expired"], holdReason ? "held" : "received", {
     received_kobo: amountKobo,
     pay_kobo: pay,
@@ -323,18 +366,40 @@ async function bookSellback(db: Client, actor: string, candidate: Sellback, amou
   });
   if (moved.kind === "data" && moved.bundle_id) {
     const bundle = await getBundle(db, moved.bundle_id);
-    const assumed = await getSettingValue(db, "sellback.assumed_validity_days");
-    // Gifted data keeps the seller's own validity, which the network never
-    // tells us, so the lot is recorded on the shorter of what we assume and
-    // what the bundle itself carries.
-    const validity = Math.min(assumed, bundle?.validity_days ?? assumed);
+    const validity = await assumedValidityDays(db, bundle);
     if (bundle) await openLot(db, { network: moved.network_code, bundleId: bundle.id, sizeMb: bundle.size_mb, valueKobo: amountKobo, validityDays: validity, source: moved.reference });
   }
   await db.query("UPDATE inbound_notifications SET matched_sellback_id = $1 WHERE id = $2", [moved.id, notificationId]);
   await recordEvent(db, moved.id, candidate.state, moved.state, actor, { received_kobo: amountKobo, pay_kobo: pay, notification_id: notificationId, ...(holdReason ? { hold_reason: holdReason } : {}) });
+  // Value over a cap is value we have decided not to buy, so where the
+  // founder has left the switch on it goes straight back to the line it came
+  // from. A hold that needs somebody's judgement, like a blocked seller or
+  // one bank account collecting for many lines, waits for that judgement
+  // instead: sending stolen value back to whoever sent it is not obviously
+  // the right thing to do.
+  if (returnAtOnce(holdReason) && (await getSettingValue(db, "sellback.return_over_cap"))) {
+    await startSellbackReturn(db, actor, moved.id);
+    return (await getSellback(db, moved.id))!;
+  }
   // Credit is handed over the moment the value lands. Cash waits for a
   // person, and for the holding time.
   return moved.state === "received" && moved.outcome === "credit" ? settleAsCredit(db, actor, moved) : moved;
+}
+
+// True when this seller's bank account has already collected for more
+// different lines than the founder allows. Zero turns the count off.
+async function accountCollectingForTooMany(db: Queryable, s: Sellback): Promise<boolean> {
+  if (!s.bank_account_digits) return false;
+  const most = await getSettingValue(db, "sellback.bank_max_numbers");
+  if (most <= 0) return false;
+  const others = await otherNumbersOnAccount(db, s.bank_account_digits, s.seller_number);
+  return others.length + 1 > most;
+}
+
+// Which holds mean the value goes back without anybody being asked: the
+// laundering caps, and more than we buy in one go.
+function returnAtOnce(reason: string | null): boolean {
+  return isCapReason(reason) || reason === "amount_above_maximum";
 }
 
 async function settleAsCredit(db: Client, actor: string, s: Sellback): Promise<Sellback> {
@@ -403,15 +468,38 @@ export async function releaseSellback(db: Client, actor: string, id: number): Pr
   return moved.outcome === "credit" ? settleAsCredit(db, actor, moved) : moved;
 }
 
-// The value goes back to the seller's own line and the deal is undone. A
-// person sends it from the SIM and records that here, because sending it
-// back is the same network code the seller used, in reverse.
-export async function returnSellback(db: Client, actor: string, id: number, note: string): Promise<Sellback> {
+// The value goes back to the seller's own line and the deal is undone.
+//
+// Two steps, for the same reason a refund has two: the value leaves our SIM
+// through a phone, which takes time and can fail, and a sale whose money has
+// gone must never be able to go again. The first step says it is going back
+// and nothing else; the books only move when it has gone.
+export async function startSellbackReturn(db: Client, actor: string, id: number): Promise<Sellback> {
   const s = (await db.query<Sellback>("SELECT * FROM sellbacks WHERE id = $1 FOR UPDATE", [id])).rows[0];
   if (!s) throw new UserFacingError("no_such_sellback", "There is no sale with that id.");
-  if (s.state !== "held" && s.state !== "received") throw new UserFacingError("cannot_return", `A sale that is ${s.state} cannot be sent back.`);
+  if (s.state !== "held" && s.state !== "received") throw new UserFacingError("cannot_return", `A sale that is ${s.state.replaceAll("_", " ")} cannot be sent back.`);
   if (s.credit_code) throw new UserFacingError("credit_issued", "Credit was already given for this sale. Void the credit code first.");
-  const moved = (await claim(db, id, ["held", "received"], "returned", { settled_at: new Date(), settled_by: actor, payout_reference: note.trim() || null }))!;
+  // With automatic payouts off, no phone will ever pick this up, so it is a
+  // person's from the start.
+  const automatic = await getSettingValue(db, "payout.automatic");
+  const moved = (await claim(db, id, ["held", "received"], "returning", automatic ? {} : { return_rail: "manual" }))!;
+  await recordEvent(db, id, s.state, "returning", actor, { by_hand: !automatic, ...(s.hold_reason ? { hold_reason: s.hold_reason } : {}) });
+  return moved;
+}
+
+// It has gone back: the pool gives the value up, what we owed the seller is
+// cancelled, and the margin we had booked on the deal goes with it.
+export async function completeSellbackReturn(db: Client, actor: string, id: number, note: string, options: { byHand?: boolean } = {}): Promise<Sellback | undefined> {
+  // A person may only record a return that is theirs to send. While a phone
+  // holds it, recording it by hand would mean the value goes out twice.
+  if (options.byHand) {
+    const { rows } = await db.query<{ return_rail: string | null }>("SELECT return_rail FROM sellbacks WHERE id = $1", [id]);
+    if (rows[0]?.return_rail !== "manual") {
+      throw new UserFacingError("return_not_yours", "This one is with a sending phone. Take it over first if you want to send it by hand.");
+    }
+  }
+  const moved = await claim(db, id, "returning", "returned", { settled_at: new Date(), settled_by: actor, payout_reference: note.trim() || null });
+  if (!moved) return undefined;
   const margin = moved.received_kobo! - moved.pay_kobo!;
   const postings = [
     { account: poolFor(moved), amountKobo: -moved.received_kobo! },
@@ -424,8 +512,19 @@ export async function returnSellback(db: Client, actor: string, id: number, note
     reference: moved.reference,
     postings,
   });
-  await recordEvent(db, id, s.state, "returned", actor, { note: note.trim() });
+  if (moved.kind === "data") await consumeLots(db, moved.network_code, moved.received_kobo!);
+  await recordEvent(db, id, "returning", "returned", actor, { note: note.trim() });
   return moved;
+}
+
+// A person taking a return off the phones, for when the phone cannot do it.
+export async function returnByHand(db: Client, actor: string, id: number): Promise<boolean> {
+  const { rowCount } = await db.query(
+    "UPDATE sellbacks SET return_rail = 'manual' WHERE id = $1 AND state = 'returning' AND return_request_id IS NULL AND coalesce(return_rail, '') <> 'manual'",
+    [id],
+  );
+  if (rowCount) await recordEvent(db, id, "returning", "returning", actor, { return: "taken over by hand" });
+  return rowCount === 1;
 }
 
 export type CashCheck = { ok: true } | { ok: false; reason: string };

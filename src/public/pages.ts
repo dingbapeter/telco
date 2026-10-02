@@ -1,9 +1,10 @@
 import type pg from "pg";
 import { agentByCode } from "../agents.ts";
 import type { Queryable } from "../db.ts";
-import { describeBundle, getBundle, listBundles, type Bundle } from "../bundles.ts";
+import { describeBundle, getBundle, listBundles, takeableBundles, type Bundle } from "../bundles.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
+import { explainCap } from "../limits.ts";
 import { formatNaira, parseNaira } from "../money.ts";
 import { normaliseNigerianNumber, prefixOf } from "../phone.ts";
 import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "../settings.ts";
@@ -154,15 +155,18 @@ async function homePage(db: pg.Pool, values: FormValues = {}, problem?: Html, st
     getSettingValue(db, "transfer.min_kobo"),
     getSettingValue(db, "transfer.max_kobo"),
   ]);
+  // The caps are said here, before anybody runs into one. Being refused is
+  // not the moment to learn a rule that could have been printed.
+  const [dayMax, dayCount] = await getSettingValues(db, ["transfer.sender_daily_max_kobo", "transfer.sender_daily_max_count"] as const);
   const bundles = await listBundles(db, { activeOnly: true });
-  const giftable = bundles.filter((b) => b.giftable);
+  const giftable = await takeableBundles(db);
   const [buyingAirtime, buyingData] = await getSettingValues(db, ["sellback.airtime_enabled", "sellback.data_enabled"] as const);
   const buying = buyingAirtime || buyingData;
   const body = html`<h1>Airtime on one network. Use it on another.</h1>
     <p>Send airtime from your MTN, Airtel, Glo or 9mobile line to a number on a different network. You dial your own network's transfer code, we deliver the airtime on the other side, and a small fee comes out of the amount.</p>
     <ul class="facts">
       <li>Fee: ${(percent / 100).toFixed(percent % 100 === 0 ? 0 : 2)} percent, at least ${formatNaira(floor)} and at most ${formatNaira(ceiling)}.</li>
-      <li>From ${formatNaira(min)} to ${formatNaira(max)} per transfer.</li>
+      <li>From ${formatNaira(min)} to ${formatNaira(max)} per transfer, and ${formatNaira(dayMax)} a day from one number${dayCount > 0 ? ` over at most ${dayCount} transfers` : ""}.</li>
       <li>No account, no card, no app. Just your phone's dial pad.</li>
       ${bundles.length > 0 ? html`<li>The other side can get a data bundle instead of airtime${giftable.length > 0 ? ", and you can send a data bundle you hold" : ""}.</li>` : ""}
       ${buying ? html`<li>Airtime or data you cannot use? <a href="/sell">We buy it back</a>.</li>` : ""}
@@ -244,7 +248,9 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
     case "payout_failed":
       main = html`${notice("info", html`We have your ${formatNaira(t.received_kobo!)} on ${from} and a person is looking at this transfer.`)}
         <h1>Being checked</h1>
-        <p>${t.hold_reason === "amount_below_minimum" || t.hold_reason === "amount_above_maximum" || t.hold_reason === "fee_exceeds_amount"
+        <p>${explainCap(t.hold_reason)
+          ? `${explainCap(t.hold_reason)}, so it will be sent back to your line in full.`
+          : t.hold_reason === "amount_below_minimum" || t.hold_reason === "amount_above_maximum" || t.hold_reason === "fee_exceeds_amount"
           ? "The amount that arrived is outside the limits we can move, so it will be sent back to your line."
           : t.hold_reason === "amount_below_required" || t.hold_reason === "amount_above_required"
             ? `The amount that arrived was not the exact ${formatNaira(t.requested_kobo)} the bundle needs, so it will be sent back to your line.`
@@ -257,6 +263,7 @@ async function statusPage(db: pg.Pool, t: Transfer): Promise<Response> {
     case "refunded":
       main = html`${notice("info", html`${formatNaira(t.received_kobo!)} is being returned to your ${from} line ${mask(t.sender_number)}.`)}
         <h1>${t.state === "refunded" ? "Returned" : "Being returned"}</h1>
+        ${explainCap(t.hold_reason) ? html`<p>${explainCap(t.hold_reason)}, so none of it was moved and nothing was taken off. Nothing is owed either way.</p>` : ""}
         <p>${t.state === "refunded" ? "The airtime is back on your line." : "You will see it on your line shortly. This page updates itself."}</p>`;
       refresh = t.state === "refunded" ? undefined : 60;
       break;

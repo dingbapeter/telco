@@ -3,12 +3,13 @@ import type pg from "pg";
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
 import { bookCommission } from "./agents.ts";
-import { activeBundle, describeBundle, getBundle, type Bundle } from "./bundles.ts";
+import { activeBundle, assumedValidityDays, describeBundle, getBundle, takeInCheck, type Bundle } from "./bundles.ts";
 import { consumeLots, openLot } from "./datalots.ts";
 import { computeFee, loadFeeRule, requiredAmountFor, type FeeBreakdown, type FeeRule } from "./fees.ts";
 import { balance, lockAccount, postJournal } from "./ledger.ts";
 import { assertKobo, formatNaira } from "./money.ts";
 import { normaliseNigerianNumber } from "./phone.ts";
+import { isCapReason, lockForCaps, transferCapBreach } from "./limits.ts";
 import { chooseReceivingNumber, START_OF_TODAY } from "./receiving.ts";
 import { matchSellback, type Sellback } from "./sellbacks.ts";
 import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "./settings.ts";
@@ -185,6 +186,13 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
 
   const inBundle = input.inBundleId ? await activeBundle(db, input.inBundleId, from) : undefined;
   if (inBundle && !inBundle.giftable) throw new UserFacingError("not_giftable", `${describeBundle(inBundle)} cannot be gifted to us on ${from}. Choose a bundle marked as giftable.`);
+  if (inBundle) {
+    // Data sent to us for a transfer sits in our data pool until an outgoing
+    // bundle uses it up, so it can die on our hands exactly as bought data
+    // can. One rule for both.
+    const lives = await takeInCheck(db, inBundle);
+    if (!lives.ok) throw new UserFacingError("validity_too_short", lives.reason);
+  }
   const outBundle = input.outBundleId ? await activeBundle(db, input.outBundleId, to) : undefined;
   const rule = await loadFeeRule(db, from, to);
   let amount: number;
@@ -194,10 +202,9 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
     if (input.amountKobo === undefined) throw new UserFacingError("no_amount", "Enter the amount of airtime to move.");
     amount = assertKobo(input.amountKobo);
   }
-  const [min, max, dailyMax, caps, windowMinutes] = await getSettingValues(db, [
+  const [min, max, caps, windowMinutes] = await getSettingValues(db, [
     "transfer.min_kobo",
     "transfer.max_kobo",
-    "transfer.sender_daily_max_kobo",
     "network.daily_transfer_cap_kobo",
     "transfer.inbound_window_minutes",
   ] as const);
@@ -211,20 +218,10 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
     );
   }
   // One number at a time, or two quotes asked for together would each see
-  // the day's total without the other and both pass the limit. The lock is
-  // held to the end of this transaction and taken on the number itself, so
-  // it never blocks anybody else.
-  await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`sender:${sender}`]);
-  const today = await db.query<{ total: number }>(
-    `SELECT coalesce(sum(coalesce(received_kobo, requested_kobo)), 0)::bigint AS total FROM transfers
-     WHERE sender_number = $1 AND created_at >= ${START_OF_TODAY} AND state NOT IN ('expired', 'refunded')`,
-    [sender],
-  );
-  const usedToday = today.rows[0]!.total;
-  if (usedToday + amount > dailyMax) {
-    const left = Math.max(0, dailyMax - usedToday);
-    throw new UserFacingError("daily_limit", `This number can move ${formatNaira(dailyMax)} a day and has ${formatNaira(left)} left today.`);
-  }
+  // the totals without the other and both pass the caps.
+  await lockForCaps(db, sender, recipient);
+  const breach = await transferCapBreach(db, { senderNumber: sender, recipientNumber: recipient, amountKobo: amount });
+  if (breach) throw new UserFacingError(breach.reason, breach.message);
 
   let fee: FeeBreakdown;
   try {
@@ -259,6 +256,18 @@ export async function quoteTransfer(db: Client, actor: string, input: QuoteInput
 // shares, the payout, or the reason it must wait for a person.
 async function settlement(db: Queryable, t: Transfer, amount: number): Promise<{ fee: FeeBreakdown | null; holdReason: string | null }> {
   const [min, max] = await getSettingValues(db, ["transfer.min_kobo", "transfer.max_kobo"] as const);
+  // The caps first, and against what really arrived rather than what was
+  // quoted. Somebody can send airtime to one of our SIMs without asking us
+  // for a quote at all, and a quote under a cap can be followed by more than
+  // it asked for, so this is the check that actually holds.
+  //
+  // The same lock as the quote takes, in the same order, so two notifications
+  // for one sender arriving together cannot each miss the other and let the
+  // pair through. The transfer's own row is already locked, and taken before
+  // this one with SKIP LOCKED, so nothing can be waiting in a circle.
+  await lockForCaps(db, t.sender_number, t.recipient_number);
+  const breach = await transferCapBreach(db, { senderNumber: t.sender_number, recipientNumber: t.recipient_number, amountKobo: amount, excludeTransferId: t.id });
+  if (breach) return { fee: null, holdReason: breach.reason };
   if (t.out_kind === "data") {
     // A bundle costs what it costs: the sender was told the exact amount.
     if (amount !== t.requested_kobo) return { fee: null, holdReason: amount < t.requested_kobo ? "amount_below_required" : "amount_above_required" };
@@ -304,9 +313,14 @@ export type InboundOutcome =
   | { outcome: "unmatched"; notificationId: number }
   | { outcome: "matched"; notificationId: number; transfer: Transfer }
   | { outcome: "held"; notificationId: number; transfer: Transfer; reason: string }
+  // Over one of the laundering caps, so it is already on its way back to the
+  // line it came from and nobody needs to do anything.
+  | { outcome: "returned"; notificationId: number; transfer: Transfer; reason: string }
   // Value somebody sold us rather than sent to be moved on.
   | { outcome: "bought"; notificationId: number; sellback: Sellback }
-  | { outcome: "bought_held"; notificationId: number; sellback: Sellback; reason: string };
+  | { outcome: "bought_held"; notificationId: number; sellback: Sellback; reason: string }
+  // Bought value over a cap, already on its way back to the seller's line.
+  | { outcome: "bought_returned"; notificationId: number; sellback: Sellback; reason: string };
 
 // Records a network notification and, if a transfer is waiting for it, marks
 // the airtime as received and books it. The same notification arriving twice
@@ -362,10 +376,12 @@ export async function recordInbound(db: Client, actor: string, n: InboundNotific
   if (!candidate) {
     const bought = await matchSellback(db, actor, { network, receivingNumber: receiving, sellerNumber: sender, amountKobo: amount, dataMb: n.dataMb, notificationId });
     if (!bought) return { outcome: "unmatched", notificationId };
+    if (bought.state === "returning") return { outcome: "bought_returned", notificationId, sellback: bought, reason: bought.hold_reason ?? "over a cap" };
     return bought.hold_reason ? { outcome: "bought_held", notificationId, sellback: bought, reason: bought.hold_reason } : { outcome: "bought", notificationId, sellback: bought };
   }
   const updated = await bookInbound(db, actor, candidate, amount, notificationId, {});
   if (!updated) return { outcome: "unmatched", notificationId };
+  if (updated.state === "refunding") return { outcome: "returned", notificationId, transfer: updated, reason: updated.hold_reason ?? "over a cap" };
   return updated.hold_reason
     ? { outcome: "held", notificationId, transfer: updated, reason: updated.hold_reason }
     : { outcome: "matched", notificationId, transfer: updated };
@@ -398,7 +414,10 @@ async function bookInbound(db: Client, actor: string, candidate: Transfer, amoun
   });
   if (updated.in_kind === "data" && updated.in_bundle_id) {
     const b = await getBundle(db, updated.in_bundle_id);
-    if (b) await openLot(db, { network: updated.from_network, bundleId: b.id, sizeMb: b.size_mb, valueKobo: amount, validityDays: b.validity_days, source: updated.reference });
+    // Not the bundle's full life: data gifted to us has already been running
+    // for as long as the sender had it, and nothing tells us how long that
+    // was. The same assumption as data somebody sells us.
+    if (b) await openLot(db, { network: updated.from_network, bundleId: b.id, sizeMb: b.size_mb, valueKobo: amount, validityDays: await assumedValidityDays(db, b), source: updated.reference });
   }
   await db.query("UPDATE inbound_notifications SET matched_transfer_id = $1 WHERE id = $2", [updated.id, notificationId]);
   await recordEvent(db, updated.id, candidate.state, nextState, actor, {
@@ -407,6 +426,15 @@ async function bookInbound(db: Client, actor: string, candidate: Transfer, amoun
     ...detail,
     ...(holdReason ? { hold_reason: holdReason } : {}),
   });
+  // A cap was broken, so this is value we have decided not to take. Where the
+  // founder has left the switch on it goes straight back to the line it came
+  // from, on the same rail a refund uses, rather than sitting on our SIM
+  // while somebody decides again. The reason stays on the row, so both the
+  // sender's page and ours can say which cap it was.
+  if (isCapReason(holdReason) && (await getSettingValue(db, "transfer.return_over_limit"))) {
+    await startRefund(db, actor, updated.id);
+    return getTransfer(db, updated.id);
+  }
   return updated;
 }
 

@@ -11,10 +11,13 @@ import {
   getCreditNote,
   getSellback,
   paySellbackCash,
+  otherNumbersOnAccount,
   rateFor,
   releaseSellback,
-  returnSellback,
+  returnByHand,
+  completeSellbackReturn,
   sellerHistory,
+  startSellbackReturn,
   unblockSeller,
   voidCredit,
   type CreditNote,
@@ -42,6 +45,20 @@ function stateWord(s: Sellback): string {
   return s.state.replaceAll("_", " ");
 }
 
+// The facts a person needs before they pay anybody, in one place so that
+// every screen where a payout can be settled shows the same ones: what this
+// number has sold us before, and whether the bank account has collected for
+// other lines. Shown even when nothing is wrong, because a clean history is
+// also information.
+async function riskNote(db: pg.Pool, s: Sellback): Promise<Html> {
+  const history = await sellerHistory(db, s.seller_number);
+  const shared = s.bank_account_digits ? await otherNumbersOnAccount(db, s.bank_account_digits, s.seller_number) : [];
+  return html`<p class="muted">This number has sold to us ${history.sales} time${history.sales === 1 ? "" : "s"}, ${money(history.soldKobo)} in all, and has taken ${money(history.paidKobo)}${history.firstAt ? `, first on ${when(history.firstAt)}` : ""}.${history.blocked ? " It is blocked from selling to us." : ""}</p>
+    ${shared.length > 0
+      ? notice("problem", html`This bank account has also been given for sales from ${shared.length} other number${shared.length === 1 ? "" : "s"}: ${shared.join(", ")}. One account collecting for several lines is how a ring looks. Satisfy yourself before paying.`)
+      : ""}`;
+}
+
 async function sellbacksPage(req: Request, db: pg.Pool, message?: Html, status = 200): Promise<{ kind: "html"; status: number; body: string }> {
   const [airtimeOn, dataOn, cashOn, cashCap, holdHours] = await getSettingValues(db, [
     "sellback.airtime_enabled",
@@ -62,6 +79,7 @@ async function sellbacksPage(req: Request, db: pg.Pool, message?: Html, status =
   const margin = await balance(db, "revenue:sellback_margin");
   const waitingCash = await rows(db, "s.state = 'received' AND s.outcome = 'cash'");
   const held = await rows(db, "s.state = 'held'");
+  const returning = await rows(db, "s.state = 'returning'");
   const recent = await rows(db, "s.state NOT IN ('awaiting_inbound', 'expired')", [], 30);
   const waiting = await rows(db, "s.state IN ('awaiting_inbound', 'expired')", [], 10);
   const blocks = (await db.query<{ number: string; reason: string; added_at: Date; added_by: string }>("SELECT * FROM sellback_blocks ORDER BY added_at DESC")).rows;
@@ -102,11 +120,10 @@ async function sellbacksPage(req: Request, db: pg.Pool, message?: Html, status =
     ${waitingCash.length === 0 ? html`<p class="muted">None.</p>` : ""}
     ${await Promise.all(waitingCash.map(async (s) => {
       const check = await cashPayoutCheck(db, s);
-      const history = await sellerHistory(db, s.seller_number);
       return html`<form method="post" action="/admin/sellbacks/${s.id}/cash" class="panel">${csrf(req)}
         <p><strong>${money(s.pay_kobo)}</strong> to ${s.seller_number} for ${money(s.received_kobo)} of ${s.network_code} ${KIND(s)}, landed ${when(s.received_at)}. <a href="/admin/sellbacks/${s.id}">${s.reference}</a></p>
         <p>Pay to: <strong>${s.bank_details}</strong></p>
-        <p class="muted">This number has sold to us ${history.sales} time${history.sales === 1 ? "" : "s"}, ${money(history.soldKobo)} in all, first on ${when(history.firstAt)}.</p>
+        ${await riskNote(db, s)}
         ${check.ok ? "" : notice("info", check.reason)}
         <div class="row"><div><label for="ref-${s.id}">Bank reference once sent</label><input id="ref-${s.id}" name="reference" type="text" ${check.ok ? "required" : "disabled"}></div>
           <div><label>&nbsp;</label><button type="submit" ${check.ok ? "" : "disabled"}>Paid</button></div></div></form>`;
@@ -114,13 +131,27 @@ async function sellbacksPage(req: Request, db: pg.Pool, message?: Html, status =
 
     <h2>Held, waiting for a person (${held.length})</h2>
     ${held.length === 0 ? html`<p class="muted">None.</p>` : ""}
-    ${held.map((s) => html`<div class="panel">
+    ${await Promise.all(held.map(async (s) => html`<div class="panel">
       <p><strong>${s.reference}</strong>: ${money(s.received_kobo)} of ${s.network_code} ${KIND(s)} from ${s.seller_number}, held because ${(s.hold_reason ?? "").replaceAll("_", " ")}. We would owe ${money(s.pay_kobo)}.</p>
       <div class="row">
         <form method="post" action="/admin/sellbacks/${s.id}/release" class="inline">${csrf(req)}<button type="submit">Buy it anyway</button></form>
-        <form method="post" action="/admin/sellbacks/${s.id}/return" class="inline">${csrf(req)}<input type="hidden" name="note" value="sent back by hand"><button type="submit" class="danger">Send it back</button></form>
+        <form method="post" action="/admin/sellbacks/${s.id}/return" class="inline">${csrf(req)}<button type="submit" class="danger">Send it back</button></form>
       </div>
-      <p class="muted">Sending it back means a person sends the same value from our SIM to ${s.seller_number} and records it here. Open <a href="/admin/sellbacks/${s.id}">${s.reference}</a> to write a note.</p></div>`)}
+      ${await riskNote(db, s)}
+      <p class="muted">Sending it back puts it on the ${s.network_code} phone, which sends the same value to ${s.seller_number} on its own. If no phone can, it appears below for you to send by hand. Open <a href="/admin/sellbacks/${s.id}">${s.reference}</a> for the whole story.</p></div>`))}
+
+    <h2>On their way back (${returning.length})</h2>
+    ${returning.length === 0 ? html`<p class="muted">None.</p>` : ""}
+    ${returning.map((s) => html`<div class="panel">
+      <p><strong>${s.reference}</strong>: ${money(s.received_kobo)} of ${s.network_code} ${KIND(s)} going back to ${s.seller_number}${s.hold_reason ? `, because ${s.hold_reason.replaceAll("_", " ")}` : ""}.</p>
+      ${s.return_last_error ? notice("info", s.return_last_error) : ""}
+      ${s.return_rail === "manual"
+        ? html`<form method="post" action="/admin/sellbacks/${s.id}/returned">${csrf(req)}
+            <p>Send ${money(s.received_kobo)} from our ${s.network_code} SIM to ${s.seller_number}, then record it here.</p>
+            <div class="row"><div><label for="note-${s.id}">What you sent and how</label><input id="note-${s.id}" name="note" type="text" required></div>
+              <div><label>&nbsp;</label><button type="submit">Sent back</button></div></div></form>`
+        : html`<p class="muted">With the ${s.network_code} phone as command ${s.return_request_id ?? "not yet queued"}. The books move when the network confirms it.</p>
+            <form method="post" action="/admin/sellbacks/${s.id}/byhand" class="inline">${csrf(req)}<button type="submit" class="secondary">Take it over by hand</button></form>`}</div>`)}
 
     <h2>Waiting for the seller to send (${waiting.length})</h2>
     <div class="scroll"><table><tr><th>Reference</th><th>Seller</th><th>What</th><th class="num">Worth</th><th class="num">We pay</th><th>Wants</th><th>State</th><th>Started</th></tr>
@@ -154,6 +185,7 @@ async function salePage(req: Request, db: pg.Pool, id: number, message?: Html, s
   if (!s) throw new UserFacingError("no_such_sellback", "There is no sale with that id.");
   const bundle = s.bundle_id ? await getBundle(db, s.bundle_id) : undefined;
   const history = await sellerHistory(db, s.seller_number);
+  const facts = await riskNote(db, s);
   const note = s.credit_code ? await getCreditNote(db, s.credit_code) : undefined;
   const events = (await db.query<{ at: Date; from_state: string | null; to_state: string; actor: string; detail: unknown }>(
     "SELECT at, from_state, to_state, actor, detail FROM sellback_events WHERE sellback_id = $1 ORDER BY id",
@@ -173,14 +205,25 @@ async function salePage(req: Request, db: pg.Pool, id: number, message?: Html, s
       <dt>Started</dt><dd>${when(s.created_at)}</dd>
       ${s.received_at ? html`<dt>Landed</dt><dd>${when(s.received_at)}</dd>` : ""}
       ${s.settled_at ? html`<dt>Settled</dt><dd>${when(s.settled_at)} by ${s.settled_by}</dd>` : ""}</dl>
-    <p class="muted">This number has sold to us ${history.sales} time${history.sales === 1 ? "" : "s"}, ${money(history.soldKobo)} in all, and has taken ${money(history.paidKobo)}.</p>
+    ${facts}
     ${s.state === "held" ? html`<h2>Held: ${(s.hold_reason ?? "").replaceAll("_", " ")}</h2>
       <form method="post" action="/admin/sellbacks/${s.id}/release" class="panel">${csrf(req)}<p>Buy it anyway at the rate quoted. ${s.outcome === "credit" ? "The seller gets their credit code at once." : "It joins the cash queue."}</p><button type="submit">Buy it anyway</button></form>` : ""}
     ${s.state === "held" || s.state === "received"
       ? html`<form method="post" action="/admin/sellbacks/${s.id}/return" class="panel">${csrf(req)}
-          <p>Send the value back to ${s.seller_number} from our ${s.network_code} SIM, then record it here. Nothing will be owed.</p>
-          <div class="row"><div><label for="note">What you sent and how</label><input id="note" name="note" type="text" required></div>
-            <div><label>&nbsp;</label><button type="submit" class="danger">Sent back</button></div></div></form>`
+          <p>Send the value back to ${s.seller_number} on ${s.network_code}. The phone does it; if no phone can, it comes back to you to send by hand. Nothing will be owed either way.</p>
+          <button type="submit" class="danger">Send it back</button></form>`
+      : ""}
+    ${s.state === "returning"
+      ? html`<h2>Going back to ${s.seller_number}</h2>
+          ${s.return_last_error ? notice("info", s.return_last_error) : ""}
+          ${s.return_rail === "manual"
+            ? html`<form method="post" action="/admin/sellbacks/${s.id}/returned" class="panel">${csrf(req)}
+                <p>Send ${money(s.received_kobo)} from our ${s.network_code} SIM to ${s.seller_number}, then record it here. The books move when you do.</p>
+                <div class="row"><div><label for="note">What you sent and how</label><input id="note" name="note" type="text" required></div>
+                  <div><label>&nbsp;</label><button type="submit">Sent back</button></div></div></form>`
+            : html`<form method="post" action="/admin/sellbacks/${s.id}/byhand" class="panel">${csrf(req)}
+                <p>The ${s.network_code} phone has this one${s.return_request_id ? ` as ${s.return_request_id}` : ""}. Take it over only if the phone cannot send it, or it could go out twice.</p>
+                <button type="submit" class="secondary">Take it over by hand</button></form>`}`
       : ""}
     ${s.outcome === "cash" && s.state === "received"
       ? html`<form method="post" action="/admin/sellbacks/${s.id}/cash" class="panel">${csrf(req)}
@@ -247,12 +290,49 @@ export function registerSellbacksAdmin(app: App): void {
   app.post("/admin/sellbacks/:id/return", async (req, db) => {
     const id = Number(req.query.get("id"));
     try {
-      const s = await withActor(actor(req.admin), (c) => returnSellback(c, actor(req.admin), id, req.form.get("note") ?? ""), db);
+      const s = await withActor(actor(req.admin), (c) => startSellbackReturn(c, actor(req.admin), id), db);
+      return salePage(
+        req,
+        db,
+        id,
+        notice(
+          "ok",
+          s.return_rail === "manual"
+            ? `${s.reference} is marked as going back to ${s.seller_number}. Automatic payouts are off, so send it from the ${s.network_code} SIM and record it below.`
+            : `${s.reference} is going back to ${s.seller_number}. The ${s.network_code} phone sends it within a minute and the books move when the network confirms it.`,
+        ),
+      );
+    } catch (err) {
+      if (err instanceof UserFacingError) return salePage(req, db, id, notice("problem", err.message), 400);
+      throw err;
+    }
+  });
+
+  app.post("/admin/sellbacks/:id/returned", async (req, db) => {
+    const id = Number(req.query.get("id"));
+    try {
+      const note = requiredField(req.form, "note", "What you sent");
+      const s = await withActor(actor(req.admin), (c) => completeSellbackReturn(c, actor(req.admin), id, note, { byHand: true }), db);
+      if (!s) return salePage(req, db, id, notice("problem", "That one is no longer on its way back, so nothing was recorded. Read what happened below."), 400);
       return salePage(req, db, id, notice("ok", `Recorded as sent back to ${s.seller_number}. Nothing is owed on ${s.reference}.`));
     } catch (err) {
       if (err instanceof UserFacingError) return salePage(req, db, id, notice("problem", err.message), 400);
       throw err;
     }
+  });
+
+  app.post("/admin/sellbacks/:id/byhand", async (req, db) => {
+    const id = Number(req.query.get("id"));
+    const took = await withActor(actor(req.admin), (c) => returnByHand(c, actor(req.admin), id), db);
+    return salePage(
+      req,
+      db,
+      id,
+      took
+        ? notice("ok", "This one is yours to send now. Send the value from the SIM and record it below.")
+        : notice("problem", "It could not be taken over: a phone has already been given it, or it is no longer going back. Read what happened below."),
+      took ? 200 : 400,
+    );
   });
 
   app.post("/admin/sellbacks/credit", async (req, db) => {

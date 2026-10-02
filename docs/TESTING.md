@@ -27,6 +27,23 @@ node scripts/mutation-check.ts
 It applies each breakage listed in the script, runs the suite that should
 catch it, restores the file, and fails if any breakage left the suite green.
 
+The whole list takes hours, because every breakage rebuilds the test database
+and runs a suite. To split it, copy the repository once per shard, give each
+copy its own database, and run:
+
+```
+MUTATION_SHARD=1/3 DATABASE_URL=postgres://.../telco_m1_test node scripts/mutation-check.ts
+```
+
+A copy per shard is not optional: two shards in one folder would edit the same
+files and report nonsense.
+
+**If a run is killed part way through, the file it was editing is left
+broken.** The script puts every file back in a `finally` block, which a kill
+signal does not run. After an interrupted run, check `git status` and
+`npx tsc --noEmit` before trusting anything. This happened once while this
+work was being built, which is why it is written here.
+
 ## Core suites (money, fees, settings, ledger, transfers, migrations)
 
 Checked on 17 September 2026. Thirty breakages, all caught after two test
@@ -373,7 +390,19 @@ Checked on 1 October 2026.
 | Value below the smallest we buy taken anyway | Red |
 | Value from a blocked number bought anyway | Red |
 | A blocked number quoted a rate | Red |
-| One number allowed to sell as much as it likes in a day | Red |
+| One number allowed to sell as much as it likes in a day, or in a week | Red, one test each |
+| One number allowed to make as many sales in a day as it likes | Red |
+| The caps not checked again against the value that really arrived | Red |
+| Value over a cap kept instead of sent back, and sent back with the switch off | Red, one test each |
+| More than we buy in one go kept for a person instead of going back | Red |
+| One bank account allowed to collect for any number of lines | Red |
+| Cash taken with no account number to pay into | Red |
+| A phone number read as a bank account number | Red |
+| A return a phone is sending also recorded by hand | Red |
+| A return taken over after a phone already has it | Red |
+| Data sent back leaving its lot open to be written off twice | Red |
+| Short dated data, or data nobody has dated, bought anyway | Red, one test each |
+| Short dated data still offered to sellers | Red |
 | The day's buying ceiling ignored | Red |
 | What we buy not counted against the SIM's daily cap | Red |
 | A sale taking airtime a transfer was waiting for | Red |
@@ -397,6 +426,48 @@ have failed with a database error, which is why that path is driven through
 the bridge in a test and not only through the function underneath it. And a
 message we bought value on would have stayed in the unmatched list for
 ever, telling the founder to go and pay a seller who had already been paid.
+
+### Three faults found while building the fraud controls
+
+**Four figures with no comma were read as three.** The built-in reading of a
+network's message had the grouped form of an amount as an optional group, so
+against "You have received N1500.00" it matched the first three digits and
+stopped: N1,500 was booked as N150. Every sample in the suite happened to use
+either three figures or a comma, so nothing caught it. The grouped form now
+has to contain a comma, the suite carries four-figure samples with and without
+kobo, and the mutation puts the old pattern back. This one would have
+mis-booked real money on the first busy day.
+
+**Data sent back left its lot open.** Sending bought data back to the seller
+reversed the money and left the lot sitting in the data pool, where it would
+later be written off as an expiry loss we had already been paid back for. The
+transfer side had been doing this correctly all along, which is how it was
+noticed. Now both give the lot up, and a mutation holds it.
+
+**Data gifted in for a transfer was dated by the bundle's full life.** A
+sellback dated its lot on the shorter of the bundle's validity and what we
+assume a gifted bundle has left; a transfer used the bundle's whole validity,
+which is a year on a year-long bundle that may have a week to run. Both now
+use the same assumption, in one function, and the datalots suite proves the
+lot is not dated by the bundle.
+
+### Two gaps a mutation found in the new controls
+
+**Taking a return off the phones.** Recording by hand a return a phone is
+already sending would send the value out twice, so the same rule as a refund
+applies: it cannot be taken over once a phone has it. Turning the rule off
+left the suite green, because the test took the return over before any phone
+had been given it. The suite now also sets the request id first, the way the
+worker does, and insists both the takeover and the by-hand record are refused.
+
+**A phone number is not a bank account.** The account number is read out of
+what a seller typed as the one run of exactly ten digits. Loosening it to any
+ten digits left the suite green, because the only test for it used bank
+details with no digits at all. An eleven digit phone number would then have
+had its first ten digits taken as an account number: a payment into an account
+nobody holds, and a wrong count of the lines sharing an account. The suite now
+refuses details that carry only a phone number, and picks the account out of
+details that carry both.
 
 ### Three defences on purpose
 
@@ -539,6 +610,59 @@ they are paused, and a session is only accepted while the account is
 active. Only the second is load-bearing, so the mutation turns off both.
 The deletion stays, because a row nobody can use is still a row with a
 token hash in it.
+
+## Laundering caps suite (`tests/limits.test.ts`)
+
+Drives the caps that stop the service being used to wash money, and what
+happens to value that arrives over one. Checked on 2 October 2026. The
+thinking behind them is in docs/CAPS.md.
+
+| Breakage introduced | Result |
+| --- | --- |
+| The week's money cap on a sender ignored | Red |
+| The day's or the week's count of transfers ignored | Red, one test each |
+| A receiving number's daily amount or count ignored | Red, one test each |
+| A cap set to zero still refusing, instead of being off | Red |
+| The week counted from the beginning of time instead of Monday | Red |
+| A transfer counted against its own cap | Red |
+| The caps not checked again against the amount that really arrived | Red |
+| Value over a cap kept for a person instead of sent back | Red |
+| Value over a cap sent back even with the switch turned off | Red |
+| Expired and returned transfers counted against the number that sent them | Red |
+
+| The locks that make two things at once count each other, on quoting and on arrival | Red, one test each |
+
+Two of those are worth saying plainly, because they are the tests that stop
+the caps doing harm rather than good.
+
+**A transfer must not count against its own cap.** The row is in the table
+before the airtime lands, so a cap checked on arrival without excluding the
+transfer being checked would send back every transfer made at exactly the
+cap, which is the one amount a cap is meant to allow. The test quotes at the
+cap, lands the exact amount and insists it goes through.
+
+**A sender must learn nothing about the receiving number.** The cap on a
+receiving number can only be enforced by telling the sender it has been
+reached, so the test asserts that the figure for that number's day appears
+nowhere in the message. Otherwise anybody could learn how much a stranger's
+line has been sent today by asking for quotes until the message changed.
+
+### A concurrency test that passed by luck
+
+Two quotes asked for at the same moment must not both pass a cap, and two
+amounts arriving at the same moment must not either. The first version of
+both tests started the two with `Promise.all` and asserted that only one got
+through. Both mutations, which take the locks out, left the suite green: with
+the locks gone nothing blocked, the first transaction committed before the
+second reached its counting, and the second was refused for the ordinary
+reason. The test was passing on timing, not on the thing it was written for.
+
+They now hold both transactions open on purpose, and before letting the first
+commit they wait until Postgres itself reports a backend waiting on a lock.
+With the lock in place the second really is inside the first; with it gone
+nothing ever waits, the second counts a day that is still empty, and the test
+goes red. Written down because a concurrency test that cannot fail is worse
+than no test: it reads like a guarantee.
 
 ## Security review (20 September 2026)
 

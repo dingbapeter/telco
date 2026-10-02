@@ -1,5 +1,5 @@
 import type pg from "pg";
-import { describeBundle, getBundle, listBundles, type Bundle } from "../bundles.ts";
+import { describeBundle, getBundle, listBundles, takeableBundles, type Bundle } from "../bundles.ts";
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { formatNaira, parseNaira } from "../money.ts";
@@ -42,7 +42,7 @@ async function sellPage(db: pg.Pool, values: Values = {}, problem?: Html, status
   const rates = await board(db);
   const buying = rates.filter((r) => (airtimeOn && r.airtime !== null) || (dataOn && r.data !== null));
   const cash = cashOn && cashCap > 0;
-  const bundles = dataOn ? (await listBundles(db, { activeOnly: true, giftableOnly: true })) : [];
+  const bundles = dataOn ? await takeableBundles(db) : [];
   const byNetwork = new Map<string, Bundle[]>();
   for (const b of bundles) byNetwork.set(b.network_code, [...(byNetwork.get(b.network_code) ?? []), b]);
   const body = html`<h1>Sell us airtime or data you cannot use</h1>
@@ -161,8 +161,16 @@ async function statusPage(db: pg.Pool, s: Sellback, message?: Html): Promise<Res
           ? `What arrived was less than the smallest amount we buy, so it will be sent back to your line.`
           : s.hold_reason === "amount_above_maximum"
             ? `What arrived was more than we buy at once, so it will be sent back to your line.`
+            : explainSellerCap(s.hold_reason)
+              ? `${explainSellerCap(s.hold_reason)}, so it will be sent back to your line in full.`
             : "A person will either pay you or send it back to your line. Nothing is lost."} Keep this reference: ${s.reference}.</p>`;
       refresh = 120;
+      break;
+    case "returning":
+      main = html`${notice("info", `${formatNaira(s.received_kobo!)} of ${net} ${s.kind} is going back to your line ${mask(s.seller_number)}.`)}
+        <h1>Being sent back</h1>
+        <p>${explainSellerCap(s.hold_reason) ?? "We are not buying this one"}, so nothing is owed and nothing was taken off. You will see it on your line shortly. This page updates itself.</p>`;
+      refresh = 60;
       break;
     case "returned":
       main = html`${notice("info", `${formatNaira(s.received_kobo!)} was sent back to your ${net} line ${mask(s.seller_number)}.`)}
@@ -177,6 +185,25 @@ async function statusPage(db: pg.Pool, s: Sellback, message?: Html): Promise<Res
     <dl class="ref"><dt>Reference</dt><dd><strong>${s.reference}</strong> <span class="muted">keep this to check on the sale</span></dd>
       <dt>Rate</dt><dd>${share(s.rate_basis_points)} of what it is worth</dd></dl>`;
   return { kind: "html", body: shell(s.state === "awaiting_inbound" ? "Send what you are selling" : "Your sale", body, refresh ? { refreshSeconds: refresh } : {}) };
+}
+
+// What a seller is told when a cap stopped the sale. The same caps as a
+// sender's, said for somebody selling rather than sending.
+function explainSellerCap(reason: string | null): string | undefined {
+  switch (reason) {
+    case "over_daily_limit":
+      return "Your number has sold as much as one number may sell in a day";
+    case "over_weekly_limit":
+      return "Your number has sold as much as one number may sell in a week";
+    case "over_daily_count":
+      return "Your number has made as many sales as it may make today";
+    case "over_weekly_count":
+      return "Your number has made as many sales as it may make this week";
+    case "amount_above_maximum":
+      return "What arrived was more than we buy in one go";
+    default:
+      return undefined;
+  }
 }
 
 export function registerSell(app: App): void {

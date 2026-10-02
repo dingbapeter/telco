@@ -20,7 +20,9 @@ import {
   quoteSellback,
   rateFor,
   releaseSellback,
-  returnSellback,
+  returnByHand,
+  completeSellbackReturn,
+  startSellbackReturn,
   spendCredit,
   voidCredit,
   type Sellback,
@@ -52,7 +54,7 @@ beforeEach(async () => {
   resetQuoteLimits();
   await seedAdmin();
   await addReceivingNumber("08039990001", "MTN");
-  mtn1gb = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: naira(600), giftable: true }));
+  mtn1gb = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 1 year", sizeMb: 1024, validityDays: 365, priceKobo: naira(600), giftable: true }));
   await as("founder", async (c) => {
     await setSetting(c, "founder", "sellback.airtime_enabled", true);
     await setSetting(c, "founder", "sellback.data_enabled", true);
@@ -254,14 +256,22 @@ test("value outside the limits is held, and sending it back leaves the books whe
   assert.equal(await balance(pool, "owed:sellers"), naira(160));
   const page = await new Browser(base).get(`/s/${sellback.reference}`);
   assert.match(page.text, /less than the smallest amount we buy, so it will be sent back/);
-  const back = await as("founder", (c) => returnSellback(c, "founder", held.id, "sent N200 back by hand from the MTN SIM"));
-  assert.equal(back.state, "returned");
+  // Automatic payouts are off, which is how the platform starts, so sending
+  // it back is a person's from the first moment.
+  const going = await as("founder", (c) => startSellbackReturn(c, "founder", held.id));
+  assert.equal(going.state, "returning");
+  assert.equal(going.return_rail, "manual");
+  // Nothing moves in the books until the value has actually gone.
+  assert.equal(await balance(pool, "pool:MTN"), naira(200));
+  const back = await as("founder", (c) => completeSellbackReturn(c, "founder", held.id, "sent N200 back by hand from the MTN SIM", { byHand: true }));
+  assert.equal(back!.state, "returned");
   assert.equal(await balance(pool, "pool:MTN"), 0);
   assert.equal(await balance(pool, "owed:sellers"), 0);
   assert.equal(await balance(pool, "revenue:sellback_margin"), 0);
   assert.ok(await booksBalance());
   // And it cannot be sent back twice.
-  await assert.rejects(as("founder", (c) => returnSellback(c, "founder", held.id, "again")), /cannot be sent back/);
+  assert.equal(await as("founder", (c) => completeSellbackReturn(c, "founder", held.id, "again", { byHand: true })), undefined);
+  await assert.rejects(as("founder", (c) => startSellbackReturn(c, "founder", held.id)), /cannot be sent back/);
 });
 
 test("a held sale can be bought anyway, and the seller gets their credit", async () => {
@@ -402,7 +412,7 @@ test("data bought becomes a lot that expires on the shorter of what we assume an
   assert.equal(sellback.face_kobo, naira(600));
   assert.equal(payKobo, naira(420), "seventy percent of the catalogue price");
   const page = await new Browser(base).get(`/s/${sellback.reference}`);
-  assert.match(page.text, /\*131\*08039990001\*MTN 1GB, 30 days#/);
+  assert.match(page.text, /\*131\*08039990001\*MTN 1GB, 1 year#/);
   await landed(naira(600), { dataMb: 1_024 });
   const after = (await getSellbackByReference(pool, sellback.reference))!;
   assert.equal(after.state, "settled");
@@ -412,7 +422,7 @@ test("data bought becomes a lot that expires on the shorter of what we assume an
   assert.equal(lots[0]!.value_kobo, naira(600));
   assert.equal(lots[0]!.source, sellback.reference);
   const days = Math.round((new Date(lots[0]!.expires_at!).getTime() - Date.now()) / 86_400_000);
-  assert.equal(days, 3, "three days, not the bundle's thirty");
+  assert.equal(days, 3, "three days, not the bundle's year");
   // Data we fail to sell on is a loss we can see, not a silent hole.
   const written = await as("founder", (c) => writeOffExpired(c, new Date(Date.now() + 4 * 86_400_000)));
   assert.equal(written.valueKobo, naira(600));
@@ -550,4 +560,206 @@ test("the overview says what is owed to sellers and who is waiting on us", async
   const page = await b.get("/admin");
   assert.match(page.text, /Owed to sellers right now<\/div><div class="value">N800/);
   assert.match(page.text, /Sellers waiting on us<\/div><div class="value">1/);
+});
+
+// --- data that dies too soon to resell -----------------------------------
+
+test("data that does not last long enough is not bought, and is not even offered", async () => {
+  const monthly = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-2gb-30", name: "MTN 2GB, 30 days", sizeMb: 2_048, validityDays: 30, priceKobo: naira(1_200), giftable: true }));
+  await assert.rejects(
+    sell({ kind: "data", bundleId: monthly.id, amountKobo: undefined }),
+    /We only take data that lasts 180 days or more, and MTN 2GB, 30 days \(2GB, 30 days, N1,200\) lasts 30 days/,
+  );
+  // And nobody is offered it, because being refused after you have sent it is
+  // worse than not being offered it.
+  const page = await new Browser(base).get("/sell");
+  assert.doesNotMatch(page.text, /MTN 2GB, 30 days/);
+  assert.match(page.text, /MTN 1GB, 1 year/);
+});
+
+test("data with no validity written down is not bought at any floor", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "sellback.min_validity_days", 1));
+  const undated = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-3gb-?", name: "MTN 3GB", sizeMb: 3_072, priceKobo: naira(1_500), giftable: true }));
+  await assert.rejects(sell({ kind: "data", bundleId: undated.id, amountKobo: undefined }), /nobody has recorded how long it lasts/);
+});
+
+test("the founder can move the validity floor and short dated data becomes buyable", async () => {
+  const monthly = await as("founder", (c) => upsertBundle(c, { network: "MTN", code: "mtn-2gb-30", name: "MTN 2GB, 30 days", sizeMb: 2_048, validityDays: 30, priceKobo: naira(1_200), giftable: true }));
+  await as("founder", (c) => setSetting(c, "founder", "sellback.min_validity_days", 30));
+  const { sellback } = await sell({ kind: "data", bundleId: monthly.id, amountKobo: undefined });
+  assert.equal(sellback.face_kobo, naira(1_200));
+});
+
+// --- the caps a seller runs into -----------------------------------------
+
+test("one number cannot sell more in a week than the week allows", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "sellback.seller_weekly_max_kobo", naira(1_200)));
+  await sell({ amountKobo: naira(1_000) });
+  await assert.rejects(sell({ amountKobo: naira(500) }), /can sell N1,200 a week and has N200 left until Monday/);
+});
+
+test("one number cannot make more sales in a day than the day allows", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "sellback.seller_daily_max_count", 2));
+  await sell({ amountKobo: naira(100) });
+  await sell({ amountKobo: naira(100) });
+  await assert.rejects(sell({ amountKobo: naira(100) }), /can make 2 sales a day and has made 2 today/);
+});
+
+test("value that arrives over a seller's cap goes straight back and nothing is owed", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "sellback.seller_daily_max_kobo", naira(1_000)));
+  const { sellback } = await sell({ amountKobo: naira(1_000) });
+  // Quoted for N1,000 and sent N1,500: the only way past a cap checked when
+  // the quote was made.
+  const outcome = await landed(naira(1_500));
+  assert.equal(outcome.outcome, "bought_returned");
+  const after = (await getSellbackByReference(pool, sellback.reference))!;
+  assert.equal(after.state, "returning");
+  assert.equal(after.hold_reason, "over_daily_limit");
+  assert.equal(after.credit_code, null, "no credit is given for value we are sending back");
+  const page = await new Browser(base).get(`/s/${sellback.reference}`);
+  assert.match(page.text, /Being sent back/);
+  assert.match(page.text, /sold as much as one number may sell in a day/);
+  // And when it has gone, the books are where they started.
+  const back = await as("founder", (c) => completeSellbackReturn(c, "founder", after.id, "sent back by hand", { byHand: true }));
+  assert.equal(back!.state, "returned");
+  assert.equal(await balance(pool, "pool:MTN"), 0);
+  assert.equal(await balance(pool, "owed:sellers"), 0);
+  assert.equal(await balance(pool, "revenue:sellback_margin"), 0);
+  assert.ok(await booksBalance());
+});
+
+test("more than we buy in one go goes back on its own too", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "sellback.max_kobo", naira(1_000)));
+  const { sellback } = await sell({ amountKobo: naira(1_000) });
+  await landed(naira(1_200));
+  const after = (await getSellbackByReference(pool, sellback.reference))!;
+  assert.equal(after.state, "returning");
+  assert.equal(after.hold_reason, "amount_above_maximum");
+});
+
+test("with the switch off, value over a cap waits for a person instead", async () => {
+  await as("founder", async (c) => {
+    await setSetting(c, "founder", "sellback.seller_daily_max_kobo", naira(1_000));
+    await setSetting(c, "founder", "sellback.return_over_cap", false);
+  });
+  const { sellback } = await sell({ amountKobo: naira(1_000) });
+  const outcome = await landed(naira(1_500));
+  assert.equal(outcome.outcome, "bought_held");
+  assert.equal((await getSellbackByReference(pool, sellback.reference))!.state, "held");
+});
+
+test("a sale that fills the cap exactly is not sent back as though it broke it", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "sellback.seller_daily_max_kobo", naira(1_000)));
+  const { sellback } = await sell({ amountKobo: naira(1_000) });
+  await landed(naira(1_000));
+  assert.equal((await getSellbackByReference(pool, sellback.reference))!.state, "settled");
+});
+
+// --- one bank account, many lines ----------------------------------------
+
+test("cash without an account number in it is refused, and a phone number is not one", async () => {
+  await enableCash();
+  await assert.rejects(sell({ outcome: "cash", bankDetails: "GTB, Ada Obi" }), /Put the ten digit account number in/);
+  // Eleven digits is a phone number. Reading the first ten of it as an
+  // account would invent an account nobody holds, and would make the count
+  // of lines sharing an account wrong as well as the payment impossible.
+  await assert.rejects(sell({ outcome: "cash", bankDetails: "GTB 08031234567 Ada Obi" }), /Put the ten digit account number in/);
+  // With both in there, the account is the ten digit one.
+  const both = await sell({ outcome: "cash", bankDetails: "GTB 08031234567 account 0123456789 Ada Obi" });
+  assert.equal(both.sellback.bank_account_digits, "0123456789");
+});
+
+test("one bank account collecting for more lines than allowed is held with the other numbers named", async () => {
+  await enableCash();
+  await as("founder", (c) => setSetting(c, "founder", "sellback.bank_max_numbers", 2));
+  const account = "GTB 0123456789 Ada Obi";
+  const first = await sell({ outcome: "cash", bankDetails: account });
+  await landed(naira(1_000));
+  assert.equal((await getSellbackByReference(pool, first.sellback.reference))!.state, "received");
+  const second = await sell({ outcome: "cash", bankDetails: account, sellerNumber: "08035550002" });
+  await landed(naira(1_000), { seller: "08035550002" });
+  assert.equal((await getSellbackByReference(pool, second.sellback.reference))!.state, "received");
+  // The third line on the same account is one too many.
+  const third = await sell({ outcome: "cash", bankDetails: account, sellerNumber: "08035550003" });
+  await landed(naira(1_000), { seller: "08035550003" });
+  const held = (await getSellbackByReference(pool, third.sellback.reference))!;
+  assert.equal(held.state, "held", "a judgement call, so it waits for a person rather than going back");
+  assert.equal(held.hold_reason, "bank_account_shared");
+  const b = new Browser(base);
+  await b.login();
+  const page = await b.get(`/admin/sellbacks/${held.id}`);
+  assert.match(page.text, /also been given for sales from 2 other numbers: 08031234567, 08035550002/);
+});
+
+// --- sending value back through a phone ----------------------------------
+
+test("a return a phone is sending cannot also be recorded by hand", async () => {
+  await as("founder", async (c) => {
+    await setSetting(c, "founder", "payout.automatic", true);
+    await setSetting(c, "founder", "sellback.min_kobo", naira(500));
+  });
+  const { sellback } = await sell({ amountKobo: naira(1_000) });
+  await landed(naira(200));
+  const held = (await getSellbackByReference(pool, sellback.reference))!;
+  const going = await as("founder", (c) => startSellbackReturn(c, "founder", held.id));
+  assert.equal(going.return_rail, null, "the phones have it, so nobody has taken it over");
+  await assert.rejects(
+    as("founder", (c) => completeSellbackReturn(c, "founder", held.id, "sent it myself", { byHand: true })),
+    /with a sending phone/,
+  );
+  // Taking it over makes it theirs, and then it can be recorded.
+  assert.equal(await as("founder", (c) => returnByHand(c, "founder", held.id)), true);
+  const back = await as("founder", (c) => completeSellbackReturn(c, "founder", held.id, "sent N200 from the SIM", { byHand: true }));
+  assert.equal(back!.state, "returned");
+});
+
+test("a return a phone has already been given cannot be taken over", async () => {
+  // Once a phone has the command, taking it over is how the value goes out
+  // twice: the phone sends it and a person sends it again.
+  await as("founder", async (c) => {
+    await setSetting(c, "founder", "payout.automatic", true);
+    await setSetting(c, "founder", "sellback.min_kobo", naira(500));
+  });
+  const { sellback } = await sell({ amountKobo: naira(1_000) });
+  await landed(naira(200));
+  const held = (await getSellbackByReference(pool, sellback.reference))!;
+  await as("founder", (c) => startSellbackReturn(c, "founder", held.id));
+  await pool.query("UPDATE sellbacks SET return_request_id = 'sellback-return-1' WHERE id = $1", [held.id]);
+  assert.equal(await as("founder", (c) => returnByHand(c, "founder", held.id)), false);
+  await assert.rejects(
+    as("founder", (c) => completeSellbackReturn(c, "founder", held.id, "sent it myself", { byHand: true })),
+    /with a sending phone/,
+  );
+});
+
+test("data sent back gives up the lot as well as the money", async () => {
+  const { sellback } = await sell({ kind: "data", bundleId: mtn1gb.id, amountKobo: undefined });
+  await landed(naira(600), { dataMb: 1_024 });
+  const bought = (await getSellbackByReference(pool, sellback.reference))!;
+  // Credit was given, so the code has to be stopped before it can go back.
+  await as("founder", (c) => voidCredit(c, "founder", bought.credit_code!, "sent us somebody else's data"));
+  await pool.query("UPDATE sellbacks SET credit_code = NULL WHERE id = $1", [bought.id]);
+  await pool.query("UPDATE sellbacks SET state = 'received' WHERE id = $1", [bought.id]);
+  await as("founder", (c) => startSellbackReturn(c, "founder", bought.id));
+  await as("founder", (c) => completeSellbackReturn(c, "founder", bought.id, "gifted back from the SIM", { byHand: true }));
+  assert.equal(await balance(pool, "datapool:MTN"), 0);
+  assert.equal((await openLots(pool)).length, 0, "the lot goes with the data, or it would be written off twice");
+});
+
+test("a message about value over a cap is recorded as sent back, not left unmatched", async () => {
+  await as("founder", async (c) => {
+    await setSetting(c, "founder", "network.sender_ids", { MTN: "MTN", AIRTEL: "Airtel", GLO: "Glo", "9MOBILE": "9mobile" });
+    await setSetting(c, "founder", "sellback.seller_daily_max_kobo", naira(1_000));
+  });
+  const { token } = await as("founder", (c) => createDevice(c, "MTN phone", "MTN"));
+  await sell({ amountKobo: naira(1_000) });
+  const r = await fetch(`${base}/bridge/messages`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ messages: [{ from: "MTN", body: `You have received N1500.00 from ${SELLER}.`, receivedAt: new Date().toISOString() }] }),
+  });
+  const body = (await r.json()) as { results: { outcome: string }[] };
+  assert.equal(body.results[0]!.outcome, "bought_returned");
+  const recorded = await pool.query<{ outcome: string }>("SELECT outcome FROM bridge_messages ORDER BY id DESC LIMIT 1");
+  assert.equal(recorded.rows[0]!.outcome, "bought_returned");
 });

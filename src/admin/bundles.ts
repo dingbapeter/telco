@@ -3,7 +3,7 @@ import { describeSize, listBundles, parseSizeMb, sizeFromName, upsertBundle, val
 import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { railFromEnv } from "../rails/rail.ts";
-import { NETWORK_CODES, type NetworkCode } from "../settings.ts";
+import { getSettingValue, NETWORK_CODES, type NetworkCode } from "../settings.ts";
 import { html, notice, page, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf, money, nairaField, requiredField } from "./shared.ts";
@@ -11,8 +11,10 @@ import { actor, csrf, money, nairaField, requiredField } from "./shared.ts";
 async function bundlesPage(req: Request, db: pg.Pool, message?: Html, status = 200): Promise<{ kind: "html"; status: number; body: string }> {
   const bundles = await listBundles(db);
   const rail = railFromEnv();
+  const floor = await getSettingValue(db, "sellback.min_validity_days");
   const body = html`<h1>Data bundles</h1>${message ?? ""}
     <p class="muted">Every bundle we deliver, sell or accept as a gift is here with its price. Value moves at that price. "Giftable" means a sender can gift that bundle to our SIM on that network and we will value it at the price shown. A provider code lets the provider deliver it without a person.</p>
+    <p class="muted">We only take data in that lasts ${floor} days or more, and none whose validity is blank, because data we cannot date is data we cannot value. A giftable bundle that fails either test is marked below and is offered to nobody. The figure is under Settings, Buying back.</p>
     ${rail
       ? html`<form method="post" action="/admin/bundles/fetch" class="panel">${csrf(req)}
           <p><strong>Fetch the provider's list.</strong> Adds every data bundle ${rail.name} sells, with its price and code. Bundles you have edited by hand keep your price and name; only their provider code is filled in.</p>
@@ -22,7 +24,7 @@ async function bundlesPage(req: Request, db: pg.Pool, message?: Html, status = 2
     <div class="scroll"><table>
       <tr><th>Network</th><th>Code</th><th>Name</th><th class="num">Size</th><th>Validity</th><th class="num">Price</th><th>Provider code</th><th>Giftable</th><th>Active</th><th>Source</th><th></th></tr>
       ${bundles.map(
-        (b) => html`<tr><td>${b.network_code}</td><td><code>${b.code}</code></td><td>${b.name}</td><td class="num">${describeSize(b.size_mb)}</td><td>${b.validity_days ? `${b.validity_days} days` : ""}</td>
+        (b) => html`<tr><td>${b.network_code}</td><td><code>${b.code}</code></td><td>${b.name}</td><td class="num">${describeSize(b.size_mb)}</td><td>${b.validity_days ? `${b.validity_days} days` : html`<span class="muted">blank</span>`}${b.giftable && (b.validity_days === null || b.validity_days < floor) ? html`<br><span class="muted">too short to take in</span>` : ""}</td>
           <td class="num">${money(b.price_kobo)}</td><td>${b.provider_variation_code ?? html`<span class="muted">none</span>`}</td><td>${b.giftable ? "yes" : "no"}</td><td>${b.active ? "yes" : "no"}</td><td>${b.source}</td>
           <td class="actions"><form method="post" action="/admin/bundles/${b.id}/toggle/active" class="inline">${csrf(req)}<button type="submit" class="secondary">${b.active ? "Pause" : "Activate"}</button></form>
             <form method="post" action="/admin/bundles/${b.id}/toggle/giftable" class="inline">${csrf(req)}<button type="submit" class="secondary">${b.giftable ? "Not giftable" : "Giftable"}</button></form></td></tr>`,

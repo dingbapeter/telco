@@ -100,10 +100,14 @@ export function registerInbound(app: App): void {
           ? notice("ok", html`Recorded and matched to <a href="/admin/transfers/${outcome.transfer.id}">${outcome.transfer.reference}</a>. It is now waiting for payout.`)
           : outcome.outcome === "held"
             ? notice("info", html`Recorded and matched to <a href="/admin/transfers/${outcome.transfer.id}">${outcome.transfer.reference}</a>, but held: ${outcome.reason.replaceAll("_", " ")}. Open it to decide.`)
-            : outcome.outcome === "bought"
+            : outcome.outcome === "returned"
+            ? notice("info", html`Recorded and matched to <a href="/admin/transfers/${outcome.transfer.id}">${outcome.transfer.reference}</a>, which is over a cap (${outcome.reason.replaceAll("_", " ")}). It is going straight back to ${outcome.transfer.sender_number} and nothing is owed.`)
+          : outcome.outcome === "bought"
               ? notice("ok", html`Recorded and matched to the sale <a href="/admin/sellbacks/${outcome.sellback.id}">${outcome.sellback.reference}</a>. ${outcome.sellback.outcome === "credit" ? "The seller's credit code is on their page." : "It is now in the cash queue."}`)
               : outcome.outcome === "bought_held"
                 ? notice("info", html`Recorded and matched to the sale <a href="/admin/sellbacks/${outcome.sellback.id}">${outcome.sellback.reference}</a>, but held: ${outcome.reason.replaceAll("_", " ")}. Open it to decide.`)
+              : outcome.outcome === "bought_returned"
+                ? notice("info", html`Recorded and matched to the sale <a href="/admin/sellbacks/${outcome.sellback.id}">${outcome.sellback.reference}</a>, which is over a cap (${outcome.reason.replaceAll("_", " ")}). It is going straight back to ${outcome.sellback.seller_number} and nothing is owed.`)
                 : outcome.outcome === "duplicate"
                   ? notice("info", "That exact message was already recorded, so nothing was added.")
                   : notice("info", "Recorded. Nothing was waiting for it, so it is in the unmatched list below.");

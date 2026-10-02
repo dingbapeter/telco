@@ -5,7 +5,7 @@ at the time it was asked. This file exists so that losing a conversation does
 not lose the decisions. When a decision is made, move it to the "Decided"
 section at the bottom with the date and the answer. Never delete a line.
 
-Last updated: 2 October 2026, after the balance checks, the find box and staff logins.
+Last updated: 2 October 2026, after the laundering caps, the data validity floor and the fraud controls on buying back.
 
 ## Needed before the core can be built
 
@@ -342,6 +342,68 @@ is a second person, then staff for anybody doing the day's work, and a
 second founder only when you want somebody who can change prices while you
 are away. Keep two founders once you have staff: it is the only way back in
 if you lose your own password, apart from the server itself.
+
+### 29. The data validity floor is set to six months, and that is most data
+
+**What is built.** We take in no data bundle whose catalogue validity is
+shorter than the floor under Settings, Buying back, and none at all whose
+validity is blank. The floor starts at 180 days, which is the six months you
+asked for. The rule covers both ways data reaches us: sold to us, and gifted
+to us to pay for a transfer, because the exposure is the same.
+
+**What it costs.** Most Nigerian data bundles are thirty days. At 180 days the
+only data we take in is the long-dated kind, which few people hold, so in
+practice this turns data buying and data-paid transfers down to a trickle.
+Airtime is untouched.
+
+**What I need from you.** The number. Three sensible answers:
+
+- **180 as it stands.** Only long-dated data, almost no volume, almost no
+  expiry losses. The safest.
+- **30.** We take the ordinary monthly bundles, which is where the volume is,
+  and accept that data unsold in a month is a loss. The assumption of what a
+  gifted bundle has left on it should then come down too.
+- **Two numbers.** A long floor for data we buy for credit or cash, and a
+  shorter one for data gifted in to pay for a transfer, which turns over
+  faster. This is the only one of the three that needs code.
+
+Until you say, it stays at 180.
+
+### 30. The caps are a guess, and an agent working from one line will hit them
+
+**What is built.** Four caps on a sending number, two on a receiving number,
+four on a selling number, all in docs/CAPS.md, all changeable while the
+service runs. They ship at: N20,000 a day and N100,000 a week per sender, ten
+transfers a day and thirty a week per sender, N20,000 and ten transfers a day
+per receiving number.
+
+**The problem.** Those numbers were chosen with no customers to look at. A POS
+agent doing transfers for walk-in customers sends them all from their own
+line, so ten a day is a busy morning and then they are stopped, with a message
+telling them to come back tomorrow.
+
+**The options.** Raise the counts for everybody, which weakens the control for
+everybody. Or let an agent's own transfers be counted against their own,
+higher caps, which is maybe twenty lines of code and one more number per agent
+on the Agents page. Or leave it and watch the Transfers page in the first
+week.
+
+**What I need from you.** Whether agents working from one line are a real part
+of the plan. If they are, say so and I will build the per-agent caps before
+launch rather than after the first complaint.
+
+### 31. Credit is handed over at once, with no holding time
+
+Cash waits for the holding time you set. A credit code does not: it is made
+the moment the value lands. The reasoning is that credit never leaves the
+business, so being wrong costs us airtime we can still stop, and the code can
+be stopped with a reason at any time with whatever is left on it becoming
+ours. Making every honest seller wait for a code would cost real sales to
+prevent something that is already reversible.
+
+If you would rather credit waited too, say so: it is one setting and a step in
+the worker, about half a day's work, and the seller's page would show when
+their code appears.
 
 ## Decided
 

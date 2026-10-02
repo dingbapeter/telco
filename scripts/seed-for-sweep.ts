@@ -12,7 +12,7 @@ import { postJournal } from "../src/ledger.ts";
 import { createOrder } from "../src/orders.ts";
 import { setSetting } from "../src/settings.ts";
 import { askForBalance, recordBalanceAnswer } from "../src/balances.ts";
-import { quoteSellback } from "../src/sellbacks.ts";
+import { quoteSellback, startSellbackReturn } from "../src/sellbacks.ts";
 import { quoteTransfer, recordInbound } from "../src/transfers.ts";
 
 const ADMIN = { email: "founder@example.com", name: "Founder", password: "correct horse battery" };
@@ -39,7 +39,7 @@ const out = await withActor("seed", async (c) => {
   await c.query("INSERT INTO receiving_numbers (number, network_code, label) VALUES ('08039990001', 'MTN', 'office'), ('08029990001', 'AIRTEL', 'office') ON CONFLICT DO NOTHING");
   await postJournal(c, { idempotencyKey: "seed:airtel", description: "Seed float", postings: [{ account: "pool:AIRTEL", amountKobo: 500_000 }, { account: "equity:float", amountKobo: -500_000 }] });
   await upsertBundle(c, { network: "AIRTEL", code: "airtel-1gb", name: "Airtel 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: 50_000, providerVariationCode: "x" });
-  await upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: 60_000, giftable: true });
+  await upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 1 year", sizeMb: 1024, validityDays: 365, priceKobo: 60_000, giftable: true });
   const { device } = await createDevice(c, "MTN phone", "MTN");
   await c.query("UPDATE bridge_devices SET can_send = true, pin_set = true, last_seen_at = now() WHERE id = $1", [device.id]);
   await setSetting(c, "seed", "network.balance_code", { MTN: "*310#", AIRTEL: "", GLO: "", "9MOBILE": "" });
@@ -63,6 +63,13 @@ const out = await withActor("seed", async (c) => {
   const { sellback: waitingSale } = await quoteSellback(c, "seed", { network: "MTN", sellerNumber: "08031234570", kind: "airtime", amountKobo: 100_000, outcome: "credit" });
   const { sellback: cashSale } = await quoteSellback(c, "seed", { network: "MTN", sellerNumber: "08031234571", kind: "airtime", amountKobo: 200_000, outcome: "cash", bankDetails: "Example Bank 0123456789 Ada Obi" });
   await recordInbound(c, "seed", { networkCode: "MTN", receivingNumber: "08039990001", senderNumber: "08031234571", amountKobo: 200_000, rawText: "You have received N2000 from 08031234571", source: "manual" });
+  // And one we have decided not to buy, on its way back to the seller's own
+  // line, so the page that handles that is never photographed empty.
+  // Asking for cash into the same account as the sale above, so the warning
+  // about one account collecting for several lines is on the page too.
+  const { sellback: goingBack } = await quoteSellback(c, "seed", { network: "MTN", sellerNumber: "08031234572", kind: "airtime", amountKobo: 150_000, outcome: "cash", bankDetails: "Example Bank 0123456789 Ada Obi" });
+  await recordInbound(c, "seed", { networkCode: "MTN", receivingNumber: "08039990001", senderNumber: "08031234572", amountKobo: 150_000, rawText: "You have received N1500 from 08031234572", source: "manual" });
+  await startSellbackReturn(c, "seed", goingBack.id);
   return { transferId: transfer.id, transferRef: waiting.reference, orderRef: order.reference, agentId: agent.id, batchRef: batch.batch.reference, sellRef: waitingSale.reference, sellbackId: cashSale.id };
 });
 await closePool();
