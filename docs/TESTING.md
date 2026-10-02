@@ -510,6 +510,36 @@ even with the digits left unstripped, because the number is also looked up
 in the form we store. The suite now searches part of a number with a space
 in it, which only the stripping can find.
 
+## Staff suite (`tests/staff.test.ts`)
+
+Drives what a person who is not the founder may and may not do, and the
+People page that decides it. Checked on 2 October 2026.
+
+| Breakage introduced | Result |
+| --- | --- |
+| The founder's things opened to everybody | Red |
+| A path kept for the founder matched loosely enough to catch the day's work | Red |
+| A new person made a founder whatever was chosen | Red |
+| Somebody able to take away their own powers | Red |
+| A paused person left inside, with both defences off | Red |
+| Staff shown the forms that change the settings | Red |
+
+### Two guards removed because a mutation showed they did nothing
+
+The People page also refused to demote or pause "the last founder". Turning
+that off left the suite green, and the reason is worth keeping: only a
+founder can open that page, so the only way to leave the business without
+one is to demote or pause **yourself**, which a separate rule already
+refuses. The redundant checks were taken out rather than propped up with a
+test, and the suite now proves the real rule from both sides, with one
+founder and with two.
+
+A paused person is kept out twice over: their sessions are deleted when
+they are paused, and a session is only accepted while the account is
+active. Only the second is load-bearing, so the mutation turns off both.
+The deletion stays, because a row nobody can use is still a row with a
+token hash in it.
+
 ## Security review (20 September 2026)
 
 Four readings of the whole code in parallel: the way people sign in, the

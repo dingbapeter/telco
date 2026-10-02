@@ -44,7 +44,7 @@ export const raw = (text: string): Html => new Html(text);
 export type PageOptions = {
   title: string;
   body: Html;
-  admin?: { name: string; email: string } | undefined;
+  admin?: { name: string; email: string; role?: string } | undefined;
   current?: string | undefined;
 };
 
@@ -66,12 +66,15 @@ const NAV: { href: string; label: string }[] = [
   { href: "/admin/audit", label: "Audit log" },
 ];
 
+// Only a founder may open this one, so only a founder is shown it.
+const FOUNDER_NAV = [{ href: "/admin/people", label: "People" }];
+
 // One layout for every page. The stylesheet is served from this repository,
 // never from a CDN, so nothing outside our server can break the page.
 export function page(o: PageOptions): string {
   const nav = o.admin
     ? html`<nav class="nav">
-        ${NAV.map((n) => html`<a href="${n.href}" ${n.href === o.current ? raw('aria-current="page"') : ""}>${n.label}</a>`)}
+        ${[...NAV, ...(o.admin.role === "founder" ? FOUNDER_NAV : [])].map((n) => html`<a href="${n.href}" ${n.href === o.current ? raw('aria-current="page"') : ""}>${n.label}</a>`)}
         <form method="post" action="/admin/logout" class="inline"><button class="link" type="submit">Log out ${o.admin.name}</button></form>
       </nav>
       <form method="get" action="/admin/find" class="find" role="search">

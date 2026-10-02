@@ -20,6 +20,7 @@ const AGENT = { name: "Mama Nkechi shop", phone: "08051234567", password: "a lon
 
 const out = await withActor("seed", async (c) => {
   await createAdmin(c, ADMIN);
+  await createAdmin(c, { email: "ada@example.com", name: "Ada", password: "a long staff password", role: "staff" });
   await setSetting(c, "seed", "retail.enabled", true);
   await setSetting(c, "seed", "agent.enabled", true);
   await setSetting(c, "seed", "agent.api_enabled", true);

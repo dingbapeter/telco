@@ -12,6 +12,7 @@ import { registerMoney } from "./admin/money.ts";
 import { registerOrders } from "./admin/orders.ts";
 import { registerOverview } from "./admin/overview.ts";
 import { registerSettlement } from "./admin/settlement.ts";
+import { registerPeople } from "./admin/people.ts";
 import { registerPools } from "./admin/pools.ts";
 import { registerSellbacksAdmin } from "./admin/sellbacks.ts";
 import { registerSettings } from "./admin/settings.ts";
@@ -38,6 +39,7 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicB
   registerTransfers(app);
   registerInbound(app);
   registerPools(app);
+  registerPeople(app);
   registerNumbers(app);
   registerSettings(app);
   registerChecklist(app);

@@ -175,6 +175,7 @@ function settingsPage(req: Request, all: ResolvedSetting<SettingKey>[], messages
   }
   const body = html`<h1>Settings</h1>
     <p class="muted">Every change takes effect on the next transfer. Nothing here needs a deploy. Every change is written to the audit log with your name.</p>
+    ${req.admin?.role === "founder" ? "" : notice("info", "You can read every setting here. Changing one is kept for the founder, because these are the numbers that decide what everything costs.")}
     ${top}
     <p class="jump">Jump to: ${[...groups.keys()].map((g) => html`<a href="#group-${g.replaceAll(" ", "-")}">${g}</a>`)}</p>
     ${[...groups.entries()].map(
@@ -190,8 +191,7 @@ function settingsPage(req: Request, all: ResolvedSetting<SettingKey>[], messages
               ${s.problem ? notice("problem", html`The stored value is not usable (${s.problem}), so the built-in default is in force. Set it again below.`) : ""}
             </p>
             ${messages[s.key] ?? ""}
-            ${inputs(s)}
-            <button type="submit">Save</button>
+            ${req.admin?.role === "founder" ? html`${inputs(s)}<button type="submit">Save</button>` : ""}
           </form>`;
         })}`,
     )}`;

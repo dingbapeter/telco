@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
-import { sessionFromToken, type Admin } from "../auth.ts";
+import { founderOnly, sessionFromToken, type Admin } from "../auth.ts";
 import { UserFacingError } from "../errors.ts";
 import { notice, page } from "./html.ts";
 
@@ -119,6 +119,22 @@ export class App {
       route.keys.forEach((k, i) => request.query.set(k, safeDecode(m[i + 1]!)));
       if (route.auth && !request.admin) {
         return send(res, { kind: "redirect", to: `/admin/login?next=${encodeURIComponent(url.pathname)}` });
+      }
+      // Some things are the founder's alone. The rule is one list in
+      // auth.ts, applied here, so a page cannot forget to ask.
+      if (route.auth && request.admin && request.admin.role !== "founder") {
+        const why = founderOnly(request.method, url.pathname);
+        if (why) {
+          return send(res, {
+            kind: "html",
+            status: 403,
+            body: page({
+              title: "Kept for the founder",
+              admin: request.admin,
+              body: notice("problem", `${why[0]!.toUpperCase()}${why.slice(1)} is kept for the founder. Ask them to do it, or to make you a founder on the People page.`),
+            }),
+          });
+        }
       }
       // Every state-changing request carries the session's token. A form
       // from another site cannot know it.

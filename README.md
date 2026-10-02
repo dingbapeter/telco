@@ -17,6 +17,7 @@ The working name is Telco. Suggested names are in
   recommendation for each.
 - `docs/DEPLOY.md` is how to put it on a server, step by step.
 - `docs/MONEY.md` is the page that says what is ours and what it earned.
+- `docs/PEOPLE.md` is who can log in and what each of them may do.
 - Every page in the command centre carries one Find box: a number, a
   reference, a credit code or an agent's name looks up everything at once.
 - `docs/TESTING.md` records which deliberate breakages each check catches.

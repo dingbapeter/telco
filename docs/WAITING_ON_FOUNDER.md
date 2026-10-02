@@ -5,7 +5,7 @@ at the time it was asked. This file exists so that losing a conversation does
 not lose the decisions. When a decision is made, move it to the "Decided"
 section at the bottom with the date and the answer. Never delete a line.
 
-Last updated: 1 October 2026, after building buying back.
+Last updated: 2 October 2026, after the balance checks, the find box and staff logins.
 
 ## Needed before the core can be built
 
@@ -321,6 +321,27 @@ for identifying a seller, the reporting duty on a suspicious pattern, and
 whether reselling gifted airtime needs anything we do not already have.
 This is next to item 17, the networks and the licence, because the same
 lawyer should answer both.
+
+### 27. The balance code for each network, and how far apart is too far
+
+The server can now ask each SIM what the network says it holds and put that
+beside the books. **Needed from you:** the balance code each network uses,
+under Settings, Networks, which you can read off the SIM pack or by dialling
+it yourself; and the difference worth worrying about, under Settings, Pools.
+**Recommendation:** enter the codes as soon as the SIMs are in the phones,
+set the checking interval to every sixty minutes, and start with a hundred
+naira as the figure that turns the checklist red. A SIM used for ordinary
+calls drifts, so zero would cry wolf.
+
+### 28. Who else gets a login, and as what
+
+Staff logins exist and everybody who has one today is a founder.
+**Needed from you:** who else should be able to get in, and whether each of
+them is staff or a founder. **Recommendation:** nobody but you until there
+is a second person, then staff for anybody doing the day's work, and a
+second founder only when you want somebody who can change prices while you
+are away. Keep two founders once you have staff: it is the only way back in
+if you lose your own password, apart from the server itself.
 
 ## Decided
 
