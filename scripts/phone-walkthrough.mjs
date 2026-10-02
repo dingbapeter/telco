@@ -10,6 +10,9 @@ import { devices, chromium } from "playwright";
 import { createAgent, setAgentTerms, topUpWallet } from "../src/agents.ts";
 import { buildApp } from "../src/app.ts";
 import { createAdmin } from "../src/auth.ts";
+import { askForBalance, recordBalanceAnswer } from "../src/balances.ts";
+import { createDevice } from "../src/bridge.ts";
+import { fetchCommands, reportResult } from "../src/sendingphone.ts";
 import { buyInBulk } from "../src/bulkorders.ts";
 import { upsertBundle } from "../src/bundles.ts";
 import { withActor } from "../src/db.ts";
@@ -48,6 +51,16 @@ await withActor("walkthrough", async (c) => {
   await postJournal(c, { idempotencyKey: "walkthrough:float", description: "Founder's float", postings: [{ account: "pool:AIRTEL", amountKobo: naira(50_000) }, { account: "pool:MTN", amountKobo: naira(50_000) }, { account: "equity:float", amountKobo: -naira(100_000) }] });
   await upsertBundle(c, { network: "MTN", code: "mtn-1gb", name: "MTN 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: naira(600), giftable: true });
   await upsertBundle(c, { network: "AIRTEL", code: "airtel-1gb", name: "Airtel 1GB, 30 days", sizeMb: 1024, validityDays: 30, priceKobo: naira(500), giftable: true });
+  // A phone on MTN that has already been asked what the network says the
+  // SIM holds, so the Pools page shows a real difference.
+  await createAdmin(c, { email: "ada@example.com", name: "Ada", password: "a long staff password", role: "staff" });
+  await setSetting(c, "walkthrough", "network.balance_code", { MTN: "*310#", AIRTEL: "", GLO: "", "9MOBILE": "" });
+  const { device } = await createDevice(c, "MTN phone", "MTN");
+  await c.query("UPDATE bridge_devices SET can_send = true, pin_set = true, last_seen_at = now() WHERE id = $1", [device.id]);
+  const { check } = await askForBalance(c, "walkthrough", "MTN");
+  await fetchCommands(c, device.id);
+  const answered = await reportResult(c, device.id, check.command_id, { ok: true, response: "Your balance is N48,600.00 valid till 31/12/2026" });
+  await recordBalanceAnswer(c, answered);
   const { agent } = await createAgent(c, AGENT);
   await setAgentTerms(c, agent.id, { discountBasisPoints: 300, commissionBasisPoints: null, creditLimitKobo: 0 });
   await topUpWallet(c, agent.id, { reference: "walkthrough", paidKobo: naira(5_000), feeKobo: 0, cashAccount: "cash:bank", method: "bank_transfer" });
@@ -168,6 +181,12 @@ await page.goto(`${base}/admin/sellbacks`);
 await shot("command-centre-buying-back");
 await page.goto(`${base}/admin/money`);
 await shot("command-centre-money");
+await page.goto(`${base}/admin/pools`);
+await shot("command-centre-sim-balances");
+await page.goto(`${base}/admin/find?q=${SELLER}`);
+await shot("command-centre-find");
+await page.goto(`${base}/admin/people`);
+await shot("command-centre-people");
 
 await browser.close();
 server.close();
