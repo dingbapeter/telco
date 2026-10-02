@@ -26,10 +26,15 @@ const SAMPLES = [
   "You have received N500.00 airtime from 2348031234567. Your new balance is N612.50.",
   "Dear Customer, you have received 1,500 Naira from 08031234567 via Share n Sell.",
   "Airtime transfer received: NGN250 from +234 803 123 4567. Thank you.",
+  // Four figures with no comma, which is how most networks write it, and the
+  // shape that was read as one hundred and fifty naira until it was tested.
+  "You have received N1500.00 airtime from 08031234567. Your new balance is N1,612.50.",
+  "You have received 2000 airtime from 2348031234567.",
+  "You have received N12345.67 from 08031234567.",
 ];
 
 test("the built-in pattern reads the amount and the sender from the ways networks word it", () => {
-  const expected = [naira(500), naira(1_500), naira(250)];
+  const expected = [naira(500), naira(1_500), naira(250), naira(1_500), naira(2_000), 1_234_567];
   SAMPLES.forEach((body, i) => {
     const parsed = parseNetworkMessage(body, "");
     assert.ok(!("problem" in parsed), `${body}: ${"problem" in parsed ? parsed.problem : ""}`);

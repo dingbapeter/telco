@@ -71,7 +71,14 @@ export async function listDevices(db: Queryable): Promise<Device[]> {
 
 // The built-in reading of a network's message: the first amount after the
 // word "received", and the first Nigerian phone number that is not our own.
-const BUILT_IN = /receiv\w*\D{0,40}?(?:N|NGN|₦)?\s*(?<amount>\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?!\s*[GM]B)[\s\S]*?(?<sender>\+?(?:234|0)(?:[\s-]?\d){10})/i;
+//
+// The grouped form must have a comma in it. Written as an optional group it
+// matched the first three digits of a number with no commas and stopped
+// there, so "N1500.00" was read as one hundred and fifty naira. The amount
+// here is the whole point of the message, so the pattern says exactly which
+// shapes an amount may take: digits in groups of three with commas, or a
+// plain run of digits, each with an optional kobo part.
+const BUILT_IN = /receiv\w*\D{0,40}?(?:N|NGN|₦)?\s*(?<amount>\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?!\s*[GM]B)[\s\S]*?(?<sender>\+?(?:234|0)(?:[\s-]?\d){10})/i;
 
 export type Parsed = { amountKobo: number; senderNumber: string } | { problem: string };
 
