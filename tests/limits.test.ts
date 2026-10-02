@@ -159,34 +159,52 @@ test("value sent back does not count against the sender afterwards", async () =>
 // Two transactions held open on purpose, so the second really is inside the
 // first and the test does not depend on which finishes first. Timing-based
 // concurrency tests pass by luck; these two drive the interleaving.
+// The caller must always wait for b, or the connection it holds is never
+// given back. Both transactions are put back and both connections released
+// however this ends, including when the first call throws: a leaked open
+// transaction holds the lock the second is waiting for, and the suite would
+// then wait for ever rather than fail. That is how a deliberate breakage
+// turned a six minute job into a six hour one once.
 async function inTwoTransactions<T>(first: (c: pg.PoolClient) => Promise<T>, second: (c: pg.PoolClient) => Promise<T>): Promise<{ a: T; b: Promise<T> }> {
   const one = await pool.connect();
   const two = await pool.connect();
-  await one.query("BEGIN");
-  await one.query("SELECT set_config('app.actor', 'test-a', true)");
-  await two.query("BEGIN");
-  await two.query("SELECT set_config('app.actor', 'test-b', true)");
-  const a = await first(one);
-  // Started while the first transaction is still open, so anything the first
-  // holds a lock on makes this wait.
-  const b = second(two)
-    .then(async (r) => {
-      await two.query("COMMIT");
-      two.release();
-      return r;
-    })
-    .catch(async (err: unknown) => {
+  let secondStarted = false;
+  try {
+    await one.query("BEGIN");
+    await one.query("SELECT set_config('app.actor', 'test-a', true)");
+    await two.query("BEGIN");
+    await two.query("SELECT set_config('app.actor', 'test-b', true)");
+    const a = await first(one);
+    // Started while the first transaction is still open, so anything the
+    // first holds a lock on makes this wait.
+    secondStarted = true;
+    const b = second(two)
+      .then(async (r) => {
+        await two.query("COMMIT");
+        two.release();
+        return r;
+      })
+      .catch(async (err: unknown) => {
+        await two.query("ROLLBACK").catch(() => undefined);
+        two.release();
+        throw err;
+      });
+    // Wait until the database says the second is really waiting on a lock
+    // before letting the first finish. Without this the commit below can win
+    // the race and the test would pass whether the lock is there or not.
+    await waitUntilSomethingIsBlocked();
+    await one.query("COMMIT");
+    one.release();
+    return { a, b };
+  } catch (err) {
+    await one.query("ROLLBACK").catch(() => undefined);
+    one.release();
+    if (!secondStarted) {
       await two.query("ROLLBACK").catch(() => undefined);
       two.release();
-      throw err;
-    });
-  // Wait until the database says the second is really waiting on a lock
-  // before letting the first finish. Without this the commit below can win
-  // the race and the test would pass whether the lock is there or not.
-  await waitUntilSomethingIsBlocked();
-  await one.query("COMMIT");
-  one.release();
-  return { a, b };
+    }
+    throw err;
+  }
 }
 
 async function waitUntilSomethingIsBlocked(timeoutMs = 3_000): Promise<boolean> {

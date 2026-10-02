@@ -40,6 +40,12 @@ files and report nonsense. CI needs no copies, because each runner in the
 matrix has its own checkout and its own database; it runs three shards and
 every one of them has to come back clean.
 
+Each breakage gets ten minutes, which is ten times the slowest suite. A
+breakage can hang a suite rather than fail it, because a test left holding a
+database lock waits for ever and node's test runner has no time limit of its
+own. A suite that never finishes is reported as not caught, which is what it
+is, rather than holding the machine until somebody notices.
+
 **If a run is killed part way through, the file it was editing is left
 broken.** The script puts every file back in a `finally` block, which a kill
 signal does not run. After an interrupted run, check `git status` and

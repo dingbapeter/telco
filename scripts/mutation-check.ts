@@ -239,7 +239,7 @@ const MUTATIONS: Mutation[] = [
 ];
 
 const only = process.argv[2];
-const results: { name: string; suite: string; outcome: "red" | "GREEN" | "did not apply" }[] = [];
+const results: { name: string; suite: string; outcome: "red" | "GREEN" | "never finished" | "did not apply" }[] = [];
 
 // The whole list takes hours, because each mutation rebuilds the test
 // database and runs a suite. MUTATION_SHARD=2/3 runs every third mutation
@@ -266,12 +266,17 @@ for (const [position, m] of MUTATIONS.entries()) {
     writeFileSync(file, edits.filter((e) => e.file === file).reduce((text, e) => text.replace(e.find, e.replace), originals.get(file)!));
   }
   try {
-    const run = spawnSync("scripts/test.sh", [m.suite], { encoding: "utf8", env: process.env });
+    // A timeout, because a breakage can hang a suite rather than fail it: a
+    // test left holding a database lock waits for ever, and node's test
+    // runner has no time limit of its own. A suite that does not finish is
+    // reported as not caught, which is what it is.
+    const run = spawnSync("scripts/test.sh", [m.suite], { encoding: "utf8", env: process.env, timeout: 10 * 60_000 });
     const output = run.stdout + run.stderr;
     const failed = /ℹ fail (\d+)/.exec(output);
-    const red = run.status !== 0 || (failed !== null && Number(failed[1]) > 0);
-    results.push({ name: m.name, suite: m.suite, outcome: red ? "red" : "GREEN" });
-    process.stdout.write(`${red ? "red  " : "GREEN"}  ${m.name}\n`);
+    const timedOut = run.error !== undefined && (run.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
+    const red = !timedOut && (run.status !== 0 || (failed !== null && Number(failed[1]) > 0));
+    results.push({ name: m.name, suite: m.suite, outcome: red ? "red" : timedOut ? "never finished" : "GREEN" });
+    process.stdout.write(`${red ? "red  " : timedOut ? "HUNG " : "GREEN"}  ${m.name}\n`);
   } finally {
     for (const [file, text] of originals) writeFileSync(file, text);
   }

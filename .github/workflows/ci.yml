@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+# One run per branch. A push that supersedes an earlier run cancels it, so a
+# job that has hung cannot sit on a machine for hours after the code that
+# hung it has been replaced.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   prose:
     name: Prose rules
