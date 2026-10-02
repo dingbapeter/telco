@@ -9,7 +9,7 @@ import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { formatNaira, parseNaira } from "../money.ts";
 import { createOrder, type Order } from "../orders.ts";
-import type { PaymentGateway } from "../payments/gateway.ts";
+import { describeMethods, type PaymentGateway } from "../payments/gateway.ts";
 import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "../settings.ts";
 import { html, notice, type Html } from "../web/html.ts";
 import type { App, Request, Response } from "../web/http.ts";
@@ -190,7 +190,7 @@ export function registerAgentPortal(app: App, options: AgentOptions): void {
       kind: "html",
       body: portal("Top up your wallet", s.agent, html`<h1>Top up your wallet</h1>${message ?? ""}
         <p>Wallet: ${formatNaira(await walletBalance(db, s.agent.id))}. Smallest top-up ${formatNaira(min)}.</p>
-        ${options.gateway ? html`<form method="post" action="/agent/topup" class="panel">${csrf(s)}<div class="field"><label for="amount">Amount in naira</label><input id="amount" name="amount" type="text" inputmode="numeric" required></div><button type="submit">Pay by card, bank or USSD</button></form>` : ""}
+        ${options.gateway ? html`<form method="post" action="/agent/topup" class="panel">${csrf(s)}<div class="field"><label for="amount">Amount in naira</label><input id="amount" name="amount" type="text" inputmode="numeric" required></div><button type="submit">Pay by ${describeMethods(await getSettingValue(db, "retail.payment_methods"))}</button></form>` : ""}
         ${bank ? html`<h2>Or pay by bank transfer</h2><p>Transfer to:</p><dl class="ref"><dt>Bank</dt><dd>${bank.bankName}</dd><dt>Account number</dt><dd><strong>${bank.accountNumber}</strong></dd><dt>Account name</dt><dd>${bank.accountName}</dd><dt>Narration</dt><dd><strong>AGENT ${s.agent.code}</strong></dd></dl><p>Put your agent code in the narration. Bank transfers are added to your wallet by hand during the day.</p>` : ""}
         ${!options.gateway && !bank ? notice("problem", "No way to top up is set up yet. Ask the Telco team.") : ""}`),
     };
@@ -210,7 +210,13 @@ export function registerAgentPortal(app: App, options: AgentOptions): void {
       const reference = `AT-${randomBytes(6).toString("base64url").toUpperCase().replace(/[^A-Z0-9]/g, "")}`;
       await db.query("INSERT INTO agent_topups (reference, agent_id, amount_kobo) VALUES ($1, $2, $3)", [reference, s.agent.id, amount]);
       try {
-        const { url } = await gateway.initialize({ reference, amountKobo: amount, email: s.agent.email ?? `agent-${s.agent.phone}@${new URL(options.publicBaseUrl).hostname}`, callbackUrl: `${options.publicBaseUrl}/payments/${gateway.name}/callback` });
+        const { url } = await gateway.initialize({
+          reference,
+          amountKobo: amount,
+          email: s.agent.email ?? `agent-${s.agent.phone}@${new URL(options.publicBaseUrl).hostname}`,
+          callbackUrl: `${options.publicBaseUrl}/payments/${gateway.name}/callback`,
+          methods: await getSettingValue(db, "retail.payment_methods"),
+        });
         return { kind: "redirect", to: url };
       } catch (err) {
         return topupPage(db, s, notice("problem", payOnlineFailed(gateway.name, err)));

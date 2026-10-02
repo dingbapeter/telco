@@ -64,6 +64,45 @@ A charge that comes back in any currency but naira is not booked at all. We
 price in naira and ask for naira, so another currency means the figures do not
 mean what the rest of the system assumes, and that is for a person to look at.
 
+## Which ways a buyer may pay, and why it matters more than it looks
+
+Under Settings, Retail top-up, "Ways a buyer may pay online" is a list of tick
+boxes. Whatever is ticked is what the gateway offers the buyer, in that
+gateway's own words, and each adapter does its own translation: what we call a
+bank transfer is `banktransfer` to Flutterwave and `bank_transfer` to Paystack,
+and what we call bank, meaning a debit straight from the buyer's account, is
+`account` to one and `bank` to the other. Tick nothing and the gateway offers
+whatever its own dashboard has enabled, which is the escape hatch if they add
+something we cannot name.
+
+It starts as bank transfer, USSD, card and bank: the ways people in Nigeria
+actually pay. The order on the page is the gateway's business, not ours.
+
+**The reason to care is chargebacks.** Airtime cannot be taken back off a line.
+A card payment can be reversed by the payer weeks after the airtime is gone,
+and the loss is ours with nothing to show for it. This is the single worst
+fraud shape in this business, and it is the mirror of the one on the buy-back
+side: there somebody sells us value that is not theirs, here somebody buys with
+a card that is not theirs.
+
+Bank transfer and USSD cannot be reversed. They are push payments: the buyer
+moves the money themselves from their own bank. So the cheapest protection
+available is to untick card, at the cost of the buyers who have nothing else.
+The setting says which methods the payer can reverse, in those words, beside
+each tick box.
+
+What is deliberately not offered:
+
+- **Mobile money as its own method.** The wallets Nigerians hold, OPay,
+  PalmPay, Moniepoint and the rest, are reached by ordinary bank transfer, so
+  they already work. The mobile money networks that need a method of their own,
+  M-Pesa in Kenya or MoMo in Ghana, take money in another country's currency,
+  which is the second currency in the ledger and a decision for the founder
+  rather than a line of code. See question 33 in docs/WAITING_ON_FOUNDER.md.
+- **Refusing a card because of where it was issued.** A card from London can
+  pay in naira and that is a feature. Where a card is from is between the
+  gateway and its own rules; what we control is the method and the currency.
+
 ## Setting up
 
 1. Under Settings, Retail top-up, enter the bank details for transfers if

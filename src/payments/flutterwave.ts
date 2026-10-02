@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { formatNaira } from "../money.ts";
-import { koboFromMajor, majorUnits, type Health, type PaymentGateway, type StartPayment, type Verification, type WebhookRead } from "./gateway.ts";
+import { koboFromMajor, majorUnits, type Health, type PaymentGateway, type PaymentMethodName, type StartPayment, type Verification, type WebhookRead } from "./gateway.ts";
 
 // Flutterwave takes money from a buyer by card, bank transfer, USSD or mobile
 // money, and takes cards issued outside Nigeria, which is why it is here.
@@ -43,6 +43,18 @@ export function flutterwaveConfigFromEnv(env: NodeJS.ProcessEnv = process.env): 
 }
 
 type Answer = { status?: string; message?: string; data?: unknown };
+
+// What Flutterwave calls each of the methods we offer. Sent as one comma
+// separated string in payment_options. Anything we cannot name is left out
+// rather than guessed at, because a name Flutterwave does not know makes it
+// refuse the whole payment.
+const THEIR_WORD: Record<PaymentMethodName, string> = {
+  bank_transfer: "banktransfer",
+  ussd: "ussd",
+  card: "card",
+  bank_account: "account",
+  qr: "qr",
+};
 
 export class FlutterwaveGateway implements PaymentGateway {
   readonly name = "flutterwave";
@@ -89,10 +101,12 @@ export class FlutterwaveGateway implements PaymentGateway {
     return parsed;
   }
 
-  // Starts a payment and returns the page to send the buyer to. The payment
-  // methods offered are whatever is turned on in the Flutterwave dashboard:
-  // naming them here would quietly hide one the founder had just enabled.
+  // Starts a payment and returns the page to send the buyer to. The methods
+  // offered are the ones the founder chose; with none chosen the field is left
+  // out altogether and Flutterwave offers whatever its own dashboard has
+  // enabled, which is the escape hatch if they add a method we cannot name.
   async initialize(input: StartPayment): Promise<{ url: string }> {
+    const options = input.methods.map((m) => THEIR_WORD[m]).join(",");
     const r = await this.call("POST", "/payments", {
       tx_ref: input.reference,
       amount: majorUnits(input.amountKobo),
@@ -100,6 +114,7 @@ export class FlutterwaveGateway implements PaymentGateway {
       redirect_url: input.callbackUrl,
       customer: { email: input.email },
       customizations: { title: "Airtime and data", description: `Payment for ${input.reference}` },
+      ...(options === "" ? {} : { payment_options: options }),
     });
     const data = r.data as { link?: string } | undefined;
     if (r.status !== "success" || !data?.link) {

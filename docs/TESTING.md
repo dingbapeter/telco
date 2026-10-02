@@ -693,6 +693,10 @@ because each difference is a way to book the wrong amount.
 | Money taken in another currency booked as though it were naira | Red |
 | One gateway's webhook address answering for another | Red |
 | The gateway whose keys are on the server not the one used | Red |
+| A way to pay the founder turned off offered anyway | Red |
+| Nothing chosen sending an empty list instead of letting the gateway decide | Red |
+| One gateway's word for a way to pay sent to the other | Red |
+| A debit from an account sent as though it were a transfer to us | Red |
 
 The units are the test worth reading twice. A price of five hundred naira is
 50,000 kobo here and `500.00` to Flutterwave, and a price with kobo in it,
@@ -700,6 +704,14 @@ The units are the test worth reading twice. A price of five hundred naira is
 factor of a hundred in a real charge, so the conversion is one function with
 its own test, in both directions, including what to do with a figure that is
 not a number at all: nothing, rather than a guess at somebody's money.
+
+Which ways a buyer may pay is a setting, and the two gateways call the same
+four methods by different names, so each adapter translates and the suite reads
+the translation back out of the request each one really sent. Two breakages in
+that table are about the translation rather than the choice: sending one
+gateway's word to the other makes it refuse the whole payment, and sending a
+debit from the buyer's account where a transfer to us was meant offers the buyer
+the wrong thing entirely.
 
 The webhook rule changed for both gateways while this was built. Paystack signs
 the body, so its figures could be trusted once the signature matched.

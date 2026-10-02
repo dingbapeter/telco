@@ -88,7 +88,29 @@ test("paying online sends the price in naira, not in kobo, with our own referenc
   assert.equal(body.currency, "NGN");
   assert.equal(body.tx_ref, o.reference);
   assert.equal(body.redirect_url, "https://telco.example/payments/flutterwave/callback");
+  assert.equal((call.body as { payment_options: string }).payment_options, "banktransfer,ussd,card,account", "the ways people in Nigeria pay");
   assert.match(body.customer.email, /^buyer-08031234567@telco\.example$/);
+});
+
+test("only the ways to pay the founder chose are offered, in Flutterwave's own words", async () => {
+  // The push methods, which cannot be reversed weeks later by the payer.
+  await as("founder", (c) => setSetting(c, "founder", "retail.payment_methods", ["bank_transfer", "ussd"]));
+  const o = await order(500);
+  await new Browser(base).post(`/o/${o.reference}/pay`, {}, false);
+  const call = fw.calls.find((c) => c.path === "/v3/payments")!;
+  assert.equal((call.body as { payment_options: string }).payment_options, "banktransfer,ussd");
+  // And the page says what it will offer, without naming card.
+  const page = await new Browser(base).get(`/o/${o.reference}`);
+  assert.match(page.text, /Pay N500 by bank transfer or USSD/);
+  assert.doesNotMatch(page.text, /A card issued outside Nigeria/);
+});
+
+test("with no way to pay chosen, the gateway's own dashboard decides", async () => {
+  await as("founder", (c) => setSetting(c, "founder", "retail.payment_methods", []));
+  const o = await order(500);
+  await new Browser(base).post(`/o/${o.reference}/pay`, {}, false);
+  const call = fw.calls.find((c) => c.path === "/v3/payments")!;
+  assert.equal(Object.hasOwn(call.body as object, "payment_options"), false, "the field is left out rather than sent empty");
 });
 
 // --- coming back, and what is believed ------------------------------------

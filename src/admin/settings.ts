@@ -2,11 +2,12 @@ import { withActor } from "../db.ts";
 import { UserFacingError } from "../errors.ts";
 import { parseNaira } from "../money.ts";
 import { getAllSettings, NETWORK_CODES, SETTINGS, setSetting, type ResolvedSetting, type SettingKey } from "../settings.ts";
-import { html, notice, page, type Html } from "../web/html.ts";
+import { CAN_BE_CHARGED_BACK, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_NOTES, PAYMENT_METHODS } from "../payments/gateway.ts";
+import { html, notice, page, raw, type Html } from "../web/html.ts";
 import type { App, Request } from "../web/http.ts";
 import { actor, csrf } from "./shared.ts";
 
-type Shape = "kobo" | "basis_points" | "minutes" | "boolean" | "count" | "text" | "per_network_route" | "per_network_kobo" | "per_network_basis_points" | "per_network_text" | "per_network_longtext" | "json";
+type Shape = "methods" | "kobo" | "basis_points" | "minutes" | "boolean" | "count" | "text" | "per_network_route" | "per_network_kobo" | "per_network_basis_points" | "per_network_text" | "per_network_longtext" | "json";
 
 // How each setting is shown and typed. Kobo settings are entered in naira.
 const SHAPES: Record<SettingKey, Shape> = {
@@ -38,6 +39,7 @@ const SHAPES: Record<SettingKey, Shape> = {
   "retail.max_kobo": "kobo",
   "retail.discount_basis_points": "per_network_basis_points",
   "retail.order_window_minutes": "minutes",
+  "retail.payment_methods": "methods",
   "retail.bank_name": "text",
   "retail.bank_account_number": "text",
   "retail.bank_account_name": "text",
@@ -120,6 +122,8 @@ export function valueFromForm(key: SettingKey, form: URLSearchParams): unknown {
       return parseWhole(field(), label);
     case "boolean":
       return field() === "on";
+    case "methods":
+      return PAYMENT_METHODS.filter((m) => field(`.${m}`) === "on");
     case "text":
       return field().trim();
     case "per_network_kobo":
@@ -160,6 +164,14 @@ function inputs(s: ResolvedSetting<SettingKey>): Html {
       return one("", v as string, "Text");
     case "boolean":
       return html`<label for="${s.key}">Setting</label><select id="${s.key}" name="value"><option value="off" ${v ? "" : "selected"}>Off</option><option value="on" ${v ? "selected" : ""}>On</option></select>`;
+    case "methods": {
+      const chosen = v as string[];
+      return html`<fieldset class="choices"><legend>Offer these</legend>
+        ${PAYMENT_METHODS.map(
+          (m) => html`<label class="tick" for="${s.key}.${m}"><input type="checkbox" id="${s.key}.${m}" name="value.${m}" ${chosen.includes(m) ? raw("checked") : ""}>
+            ${PAYMENT_METHOD_LABELS[m]}: ${PAYMENT_METHOD_NOTES[m]}${CAN_BE_CHARGED_BACK[m] ? html` <span class="muted">(the payer can reverse this weeks later)</span>` : ""}</label>`,
+        )}</fieldset>`;
+    }
     case "per_network_kobo":
       return html`<div class="row">${NETWORK_CODES.map((c) => one(`.${c}`, nairaText((v as Record<string, number>)[c]!), `${c}, naira`))}</div>`;
     case "per_network_basis_points":

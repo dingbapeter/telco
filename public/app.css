@@ -100,3 +100,11 @@ tr.soon td { background: #fbe9e9; }
 }
 .jump { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; }
 .jump a { padding: 0.5rem 0.2rem; display: inline-block; }
+/* A set of tick boxes. The label wraps the box so the words are part of the
+   tap target, which on a phone is the difference between usable and not. */
+.choices { border: 1px solid #ddd; padding: 0.4rem 0.7rem 0.7rem; margin: 0.6rem 0 0; }
+.choices legend { font-weight: 600; padding: 0 0.3rem; }
+label.tick { display: flex; align-items: center; gap: 0.5rem; font-weight: 400; min-height: 2.75rem; margin: 0; }
+/* A tick box is still a form field, and a field under 16px makes an iPhone
+   zoom the whole page in when it is tapped. */
+label.tick input { width: 1.1rem; height: 1.1rem; font-size: 1rem; }

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { formatNaira } from "../money.ts";
-import type { Health, PaymentGateway, StartPayment, Verification, WebhookRead } from "./gateway.ts";
+import type { Health, PaymentGateway, PaymentMethodName, StartPayment, Verification, WebhookRead } from "./gateway.ts";
 
 // Paystack takes money from a buyer by card, bank transfer or USSD and
 // tells us when it has settled. Their interface: POST /transaction/initialize
@@ -11,6 +11,16 @@ import type { Health, PaymentGateway, StartPayment, Verification, WebhookRead } 
 // body using the secret key.
 
 export type PaystackConfig = { baseUrl: string; secretKey: string };
+
+// What Paystack calls each of the methods we offer. Its "bank" is a debit
+// straight from an account, which is not the same as a transfer to us.
+const THEIR_WORD: Record<PaymentMethodName, string> = {
+  bank_transfer: "bank_transfer",
+  ussd: "ussd",
+  card: "card",
+  bank_account: "bank",
+  qr: "qr",
+};
 
 export function paystackConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PaystackConfig | undefined {
   const secretKey = env["PAYSTACK_SECRET_KEY"];
@@ -53,12 +63,15 @@ export class PaystackProvider implements PaymentGateway {
 
   // Starts a payment and returns the page to send the buyer to.
   async initialize(input: StartPayment): Promise<{ url: string }> {
+    const channels = input.methods.map((m) => THEIR_WORD[m]);
     const r = await this.call("POST", "/transaction/initialize", {
       reference: input.reference,
       amount: input.amountKobo,
       email: input.email,
       callback_url: input.callbackUrl,
-      channels: ["card", "bank", "ussd", "bank_transfer", "qr", "mobile_money"],
+      // With none chosen, the field is left out and Paystack offers whatever
+      // the account has enabled.
+      ...(channels.length === 0 ? {} : { channels }),
     });
     const data = r.data as { authorization_url?: string } | undefined;
     if (!r.status || !data?.authorization_url) throw new Error(`Paystack would not start the payment: ${r.message ?? "no reason given"}`);

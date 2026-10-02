@@ -5,8 +5,8 @@ import { UserFacingError } from "../errors.ts";
 import { formatNaira, parseNaira } from "../money.ts";
 import { createOrder, getOrderByReference, priceFor, recordPayment, type Order } from "../orders.ts";
 import { getCreditNote, spendCredit } from "../sellbacks.ts";
-import type { PaymentGateway, Verification } from "../payments/gateway.ts";
-import { getSettingValues, NETWORK_CODES, type NetworkCode } from "../settings.ts";
+import { describeMethods, type PaymentGateway, type Verification } from "../payments/gateway.ts";
+import { getSettingValue, getSettingValues, NETWORK_CODES, type NetworkCode } from "../settings.ts";
 import { html, notice, type Html } from "../web/html.ts";
 import type { App, Response } from "../web/http.ts";
 import { mask, referringAgent, shell, tooManyQuotes } from "./pages.ts";
@@ -51,7 +51,7 @@ async function buyPage(db: pg.Pool, values: Values = {}, problem?: Html, status 
 }
 
 async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message?: Html, status = 200): Promise<Response> {
-  const [bankName, accountNumber, accountName] = await getSettingValues(db, ["retail.bank_name", "retail.bank_account_number", "retail.bank_account_name"] as const);
+  const [bankName, accountNumber, accountName, methods] = await getSettingValues(db, ["retail.bank_name", "retail.bank_account_number", "retail.bank_account_name", "retail.payment_methods"] as const);
   const bundle = o.bundle_id ? await getBundle(db, o.bundle_id) : undefined;
   const item = bundle ? `the bundle ${bundle.name}` : `${formatNaira(o.face_kobo)} of ${NAMES[o.network_code]} airtime`;
   const bank = bankName && accountNumber && accountName ? { bankName, accountNumber, accountName } : undefined;
@@ -67,8 +67,8 @@ async function orderPage(db: pg.Pool, o: Order, options: PaymentOptions, message
         <h1>Pay ${formatNaira(o.price_kobo)} for ${item}</h1>
         <p>For ${mask(o.recipient_number)}.${o.discount_kobo > 0 ? ` That is ${formatNaira(o.discount_kobo)} off.` : ""}</p>
         ${options.gateway && !expired
-          ? html`<form method="post" action="/o/${o.reference}/pay"><button type="submit">Pay ${formatNaira(o.price_kobo)} by card, bank or USSD</button></form>
-            <p class="muted">You will be taken to ${options.gateway.label}, who handle the payment, and brought back here. A card from outside Nigeria works; your bank does the conversion.</p>`
+          ? html`<form method="post" action="/o/${o.reference}/pay"><button type="submit">Pay ${formatNaira(o.price_kobo)} by ${describeMethods(methods)}</button></form>
+            <p class="muted">You will be taken to ${options.gateway.label}, who handle the payment, and brought back here.${methods.includes("card") ? " A card issued outside Nigeria works too; your own bank does the conversion." : ""}</p>`
           : ""}
         ${bank
           ? html`<h2>${options.gateway && !expired ? "Or pay by bank transfer" : "Pay by bank transfer"}</h2>
@@ -193,6 +193,7 @@ export function registerBuy(app: App, options: PaymentOptions): void {
           amountKobo: o.price_kobo,
           email: o.buyer_email ?? `buyer-${o.recipient_number}@${new URL(options.publicBaseUrl).hostname}`,
           callbackUrl: `${options.publicBaseUrl}/payments/${gateway.name}/callback`,
+          methods: await getSettingValue(db, "retail.payment_methods"),
         });
         return { kind: "redirect", to: url };
       } catch (err) {

@@ -145,7 +145,7 @@ test("the buyer's page shows the price, the bank details with the reference, and
   assert.match(text, /Example Bank/);
   assert.match(text, /0123456789/);
   assert.match(text, /Narration or remark RT-/);
-  assert.match(text, /Pay N1,000 by card, bank or USSD/);
+  assert.match(text, /Pay N1,000 by bank transfer, USSD, card or bank/);
   assert.doesNotMatch(text, /08021234567/);
 });
 
@@ -178,6 +178,9 @@ test("paying online sends the buyer to Paystack with our reference and the price
   assert.equal((call.body as { amount: number }).amount, naira(500));
   assert.equal((call.body as { reference: string }).reference, o.reference);
   assert.equal((call.body as { callback_url: string }).callback_url, "https://telco.example/payments/paystack/callback");
+  // The same choice of methods, in Paystack's own words: its "bank" is a debit
+  // from an account rather than a transfer to us.
+  assert.deepEqual((call.body as { channels: string[] }).channels, ["bank_transfer", "ussd", "card", "bank"]);
   assert.match((call.body as { email: string }).email, /^buyer-08031234567@telco\.example$/);
 });
 

@@ -1,6 +1,7 @@
 import type { Queryable } from "./db.ts";
 import { UserFacingError } from "./errors.ts";
 import { formatNaira } from "./money.ts";
+import { PAYMENT_METHOD_LABELS, PAYMENT_METHODS, type PaymentMethodName } from "./payments/gateway.ts";
 
 export const NETWORK_CODES = ["MTN", "AIRTEL", "GLO", "9MOBILE"] as const;
 export type NetworkCode = (typeof NETWORK_CODES)[number];
@@ -110,6 +111,21 @@ function boolean(): Validator<boolean> {
 
 function oneOf<T extends string>(choices: readonly T[]): Validator<T> {
   return (value) => (typeof value === "string" && (choices as readonly string[]).includes(value) ? { ok: true, value: value as T } : { ok: false, reason: `must be one of ${choices.join(", ")}` });
+}
+
+// A list of choices from a fixed set, in the set's own order, with no
+// repeats. Order comes from the set rather than from what was typed, so two
+// ways of saying the same thing cannot be stored differently.
+function someOf<T extends string>(allowed: readonly T[]): Validator<T[]> {
+  return (value) => {
+    if (!Array.isArray(value)) return { ok: false, reason: `must be a list of ${allowed.join(", ")}` };
+    for (const v of value) {
+      if (typeof v !== "string" || !(allowed as readonly string[]).includes(v)) {
+        return { ok: false, reason: `has ${String(v)} in it, which is not one of ${allowed.join(", ")}` };
+      }
+    }
+    return { ok: true, value: allowed.filter((a) => (value as string[]).includes(a)) };
+  };
 }
 
 function text(maxLength: number): Validator<string> {
@@ -398,6 +414,16 @@ export const SETTINGS = {
     fallback: 60,
     validate: intBetween(5, 1440, "minutes"),
     format: (v) => `${v} minutes`,
+  }),
+  "retail.payment_methods": define({
+    key: "retail.payment_methods",
+    group: "Retail top-up",
+    label: "Ways a buyer may pay online",
+    description:
+      "Which of the gateway's payment methods a buyer is offered. The ones that start with the buyer pushing money to us, bank transfer and a bank's USSD code, cannot be reversed afterwards. A card can: a chargeback weeks later on airtime already delivered is money gone, because nobody can take airtime back off a line. Turning card off is the single biggest thing you can do about that, at the cost of the buyers who only have a card. With nothing chosen here, whatever is enabled in the gateway's own dashboard is offered.",
+    fallback: ["bank_transfer", "ussd", "card", "bank_account"] as PaymentMethodName[],
+    validate: someOf(PAYMENT_METHODS),
+    format: (v) => (v.length === 0 ? "whatever the gateway offers" : v.map((m) => PAYMENT_METHOD_LABELS[m]).join(", ")),
   }),
   "retail.bank_name": define({
     key: "retail.bank_name",

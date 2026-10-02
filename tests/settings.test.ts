@@ -87,3 +87,17 @@ test("a network code with a PIN typed into it instead of the placeholder is refu
   // The same code with the placeholder is fine.
   await as("founder", (c) => setSetting(c, "founder", "network.transfer_code", { MTN: "*321*{pin}*{amount}*{number}#", AIRTEL: "", GLO: "", "9MOBILE": "" }));
 });
+
+test("the ways a buyer may pay are a list from a fixed set, in the set's own order", async () => {
+  // Typed in any order, stored in one order, so two ways of saying the same
+  // thing cannot be stored differently.
+  const saved = await as("founder", (c) => setSetting(c, "founder", "retail.payment_methods", ["card", "ussd"]));
+  assert.deepEqual(saved, ["ussd", "card"]);
+  await assert.rejects(
+    as("founder", (c) => setSetting(c, "founder", "retail.payment_methods", ["card", "bitcoin"])),
+    /bitcoin in it, which is not one of bank_transfer, ussd, card, bank_account, qr/,
+  );
+  await assert.rejects(as("founder", (c) => setSetting(c, "founder", "retail.payment_methods", "card")), /must be a list of/);
+  // Nothing chosen is allowed: it means whatever the gateway offers.
+  assert.deepEqual(await as("founder", (c) => setSetting(c, "founder", "retail.payment_methods", [])), []);
+});

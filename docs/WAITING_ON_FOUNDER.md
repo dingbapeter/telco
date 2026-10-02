@@ -5,7 +5,7 @@ at the time it was asked. This file exists so that losing a conversation does
 not lose the decisions. When a decision is made, move it to the "Decided"
 section at the bottom with the date and the answer. Never delete a line.
 
-Last updated: 2 October 2026, after the laundering caps, the fraud controls on buying back, and the move to Flutterwave for taking card money.
+Last updated: 2 October 2026, after the laundering caps, the fraud controls on buying back, and settling on Flutterwave with local payment methods in naira.
 
 ## Needed before the core can be built
 
@@ -405,30 +405,7 @@ If you would rather credit waited too, say so: it is one setting and a step in
 the worker, about half a day's work, and the seller's page would show when
 their code appears.
 
-### 32. Prices in naira only, or real foreign currency pricing
-
-**What is built.** Flutterwave is now the card gateway, so a card issued
-anywhere works. We ask for naira, the buyer's own bank does the conversion at
-its rate, and we are settled in naira. A charge that comes back in any other
-currency is refused rather than converted on a guess. Nothing in the ledger
-changed, because every figure that reaches it is still naira.
-
-**What is not built.** Showing a price in pounds or dollars on our own page,
-holding a balance in that currency, or paying anybody out in one. That is a
-second currency in the books: a rate to choose and store, a gain or loss when
-the rate moves between the sale and the settlement, and a decision about who
-carries that risk. It is perhaps a fortnight of work and it changes the money
-pages, the report and the ledger.
-
-**What I need from you.** Which of the two you meant by accepting
-international currencies. If it is the first, nothing more is needed. If it is
-the second, say so and say who should carry the rate risk: the buyer, by
-pricing in naira and letting their bank convert, which is what happens now; or
-us, by quoting a fixed foreign price and absorbing the movement. Diaspora
-top-up is a real market and the second version reads better on a page, so this
-is a commercial decision, not a technical one.
-
-### 33. Paying out through Flutterwave, in or out of Nigeria
+### 32. Paying out through Flutterwave, in or out of Nigeria
 
 Flutterwave can also send money, which is the other half of what you
 mentioned. Nothing uses it: paying a seller their cash and settling an agent's
@@ -442,8 +419,32 @@ seller history all stay in front of it, and the sensible order is: watch a few
 weeks of real payouts by hand first, then automate the ones that are already
 routine. Say the word and I will build it behind those same brakes.
 
+### 33. Taking money from buyers outside Nigeria, when the time comes
+
+Local payments are what we start with, and that is decided. The thing to say
+out loud is what it rules out for now, so it is a choice rather than a
+surprise:
+
+- A buyer anywhere can still pay, because a card from any country can pay in
+  naira and their own bank converts it. What they cannot do is see a price in
+  their own currency.
+- Nobody in Kenya or Ghana can pay with M-Pesa or MoMo, because those take
+  money in shillings and cedis. Offering them means a second currency in the
+  books, and that is the fortnight of work described in the decision below.
+
+So the diaspora market is reachable today with naira prices, and properly
+addressable later with local prices. When you want the second, the question to
+answer first is who carries the rate risk: the buyer, by paying a naira price
+their bank converts, which is what happens now; or us, by quoting a fixed
+foreign price and absorbing the movement between the sale and the settlement.
+
 ## Decided
 
+- **2 October 2026. How buyers pay.** Flutterwave, and local African payment
+  methods to start with: bank transfer, a bank's USSD code, card and a direct
+  bank debit, all priced in naira. No foreign currency pricing, no mobile money
+  in other countries, both for later. Decided by the founder. Built; see
+  docs/RETAIL.md, and item 33 above for what it leaves for another day.
 - **17 September 2026. Country and networks.** Nigeria, naira, MTN,
   Airtel, Glo and 9mobile, English. Confirmed by the founder.
 - **17 September 2026. Fees and limits.** Decided in the command centre by
