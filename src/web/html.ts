@@ -60,6 +60,7 @@ const NAV: { href: string; label: string }[] = [
   { href: "/admin/numbers", label: "Receiving numbers" },
   { href: "/admin/bridge", label: "Phone bridge" },
   { href: "/admin/bundles", label: "Data bundles" },
+  { href: "/admin/dial", label: "Dial code" },
   { href: "/admin/settlement", label: "Settlement" },
   { href: "/admin/settings", label: "Settings" },
   { href: "/admin/checklist", label: "Launch checklist" },

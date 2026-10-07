@@ -35,6 +35,13 @@ copy its own database, and run:
 MUTATION_SHARD=1/3 DATABASE_URL=postgres://.../telco_m1_test node scripts/mutation-check.ts
 ```
 
+One argument narrows a run to a word in a breakage's name or to the suite that
+catches it, which is how a new area is checked while it is being built:
+
+```
+node scripts/mutation-check.ts tests/ussd.test.ts
+```
+
 A copy per shard is not optional: two shards in one folder would edit the same
 files and report nonsense. CI needs no copies, because each runner in the
 matrix has its own checkout and its own database; it runs three shards and
@@ -720,6 +727,77 @@ the secret and nothing at all about the figures. Rather than have two rules,
 neither gateway's message is believed: every one of them is just a reference to
 go and ask about. The retail suite now proves that too, with a message claiming
 ten times the price and the price being what gets booked.
+
+## Dial code suite (`tests/ussd.test.ts`)
+
+Drives the short code the way an aggregator will drive it: one keypress at a
+time over HTTP, with no browser anywhere. Checked on 7 October 2026.
+Thirty-four breakages, all caught, after one gap was closed. The aggregator in
+the tests is a client, not a stub of ours: it posts to the real endpoint,
+speaks both of the two conventions aggregators use, and reads back both shapes
+of answer, so what is under test is the whole thing a real one would meet.
+
+| Breakage introduced | Result |
+| --- | --- |
+| A screen longer than a network will carry sent anyway | Red |
+| A screen cut in the middle of a word | Red |
+| A session that can be keyed for ever | Red |
+| The aggregator's shared secret not checked, or checked only for length | Red, one test each |
+| The address left open when no secret is on the server | Red |
+| The switch in the command centre ignored | Red |
+| A short code that is not ours answered | Red |
+| A caller whose number cannot be read taken on anyway | Red |
+| The aggregator's own spelling of a network not understood | Red |
+| A network word we do not know taken to be MTN | Red |
+| Two requests of one dial racing without a lock, with and without the unique index | Red, one test each |
+| A finished dial answered with a fresh menu | Red |
+| A session the network dropped carried on anyway | Red |
+| A dropped session left open while a new dial takes its id, with and without the index | Red, one test each |
+| A keypress the aggregator repeated acted on twice | Red, after the gap below was closed |
+| A request out of order guessed at | Red |
+| The same key moments later acted on twice, in the one-key convention | Red |
+| Retries not counted against the keypress ceiling | Red |
+| A retry written into the record over and over | Red |
+| A confirmed transfer, sale or purchase made twice from one dial | Red, one test each |
+| A transfer to the caller's own network accepted | Red |
+| A refusal shown to a caller as something going wrong | Red |
+| A stray key at a confirmation throwing the journey away | Red |
+| The limits on a screen not the limits that will be enforced | Red, one test for each pair |
+| Dropped sessions closed on a window of their own instead of the setting's | Red |
+| A session shown in the command centre without what the caller was shown | Red |
+| Every caller listed whatever the filter says, or a number with spaces in it finding nothing | Red, one test each |
+
+The money in this suite is the real thing. A caller keys their way through
+the menu and what comes out is an ordinary transfer, which then completes
+through the ordinary rails and is read back with the ordinary functions. The
+caps, the same-network refusal and the network's own daily cap are not
+reimplemented for the dial pad: they refuse a dialled transfer because they
+refuse every transfer, and the test reads the refusal off the screen to prove
+the reason survives being cut to a screen's length.
+
+### The gap a mutation found
+
+Turning off the check that recognises a repeated keypress left the suite
+green. Reading it through, a repeat is caught twice: the explicit check, and
+then the rule that anything which is not the next keypress gets the same
+screen again. One case escapes that second rule, though, and it is the
+commonest one on a weak line: the aggregator repeating the very first
+request, where nothing has been keyed yet. With the explicit check gone, the
+caller would be told to "choose 1 to 5" without having chosen anything. The
+test now reads the exact screen rather than a line within it, and the
+breakage turns it red.
+
+### A defence that cannot be reached from outside, and is kept
+
+The engine refuses to create a second transfer for a confirmation that
+already holds a reference. No request can reach that guard any more, because
+a finished dial is answered from the record before the engine is called at
+all. It is kept, because a double charge is the worst thing this product
+could do to somebody, and two independent reasons for it not to happen are
+worth more than one. So that it is a defence and not an ornament, the suite
+calls the engine directly with a session that already holds a reference, for
+all three of the things a dial can create, and the breakage that removes any
+of the three turns the suite red.
 
 ## Security review (20 September 2026)
 

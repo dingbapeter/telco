@@ -70,7 +70,24 @@ const out = await withActor("seed", async (c) => {
   const { sellback: goingBack } = await quoteSellback(c, "seed", { network: "MTN", sellerNumber: "08031234572", kind: "airtime", amountKobo: 150_000, outcome: "cash", bankDetails: "Example Bank 0123456789 Ada Obi" });
   await recordInbound(c, "seed", { networkCode: "MTN", receivingNumber: "08039990001", senderNumber: "08031234572", amountKobo: 150_000, rawText: "You have received N1500 from 08031234572", source: "manual" });
   await startSellbackReturn(c, "seed", goingBack.id);
-  return { transferId: transfer.id, transferRef: waiting.reference, orderRef: order.reference, agentId: agent.id, batchRef: batch.batch.reference, sellRef: waitingSale.reference, sellbackId: cashSale.id };
+  // One finished dial session, so the Dial code page and the screens on it
+  // are photographed with the text a caller really saw. Written straight in
+  // because the engine that writes it is driven by an aggregator over HTTP,
+  // and there is no aggregator here.
+  const transcript = [
+    { at: "2026-10-07T09:14:02.000Z", screen: "Telco\n1 Send airtime to another network\n2 Sell airtime to us\n3 Buy airtime\n4 Check a transfer\n5 My recent sends" },
+    { at: "2026-10-07T09:14:09.000Z", keyed: "1", screen: "Enter the number that will RECEIVE the airtime." },
+    { at: "2026-10-07T09:14:21.000Z", keyed: "08021234567", screen: "Which network is 0802 123 4567 on?\n1 MTN\n2 Airtel (we think)\n3 Glo\n4 9mobile" },
+    { at: "2026-10-07T09:14:26.000Z", keyed: "2", screen: "How much airtime to send?\nFrom N100 to N10,000.\nReply with the amount in naira." },
+    { at: "2026-10-07T09:14:33.000Z", keyed: "500", screen: `Check carefully:\nN500 from your MTN line\nto 0802 123 4567 (Airtel)\nFee N20, they get N480\n1 Confirm  2 Change number  0 Cancel` },
+    { at: "2026-10-07T09:14:38.000Z", keyed: "1", screen: `Ref ${transfer.reference}\nNow dial *321*PIN*500*08039990001# on your MTN line.\nPIN is your own transfer PIN. We never ask for it.\nWe send N480 as soon as MTN confirms.` },
+  ];
+  const dial = await c.query<{ id: number }>(
+    `INSERT INTO ussd_sessions (session_id, caller_number, service_code, network_code, step, answers, input_so_far, last_screen, keypresses, reference, transcript, ended_at, outcome)
+     VALUES ('seed-dial-01HQ', '08031234567', '*347*55#', 'MTN', 'send_confirm', $1::jsonb, '1*08021234567*2*500*1', $2, 5, $3, $4::jsonb, now(), 'sent') RETURNING id`,
+    [JSON.stringify({ from: "MTN", to: "08021234567", toNetwork: "AIRTEL", amountKobo: 50_000 }), transcript.at(-1)!.screen, transfer.reference, JSON.stringify(transcript)],
+  );
+  return { dialId: dial.rows[0]!.id, transferId: transfer.id, transferRef: waiting.reference, orderRef: order.reference, agentId: agent.id, batchRef: batch.batch.reference, sellRef: waitingSale.reference, sellbackId: cashSale.id };
 });
 await closePool();
-console.log(`export TRANSFER_ID=${out.transferId} TRANSFER_REF=${out.transferRef} ORDER_REF=${out.orderRef} AGENT_ID=${out.agentId} BATCH_REF=${out.batchRef} SELL_REF=${out.sellRef} SELLBACK_ID=${out.sellbackId} ADMIN_EMAIL=${ADMIN.email} ADMIN_PASSWORD='${ADMIN.password}' AGENT_PHONE=${AGENT.phone} AGENT_PASSWORD='${AGENT.password}'`);
+console.log(`export DIAL_ID=${out.dialId} TRANSFER_ID=${out.transferId} TRANSFER_REF=${out.transferRef} ORDER_REF=${out.orderRef} AGENT_ID=${out.agentId} BATCH_REF=${out.batchRef} SELL_REF=${out.sellRef} SELLBACK_ID=${out.sellbackId} ADMIN_EMAIL=${ADMIN.email} ADMIN_PASSWORD='${ADMIN.password}' AGENT_PHONE=${AGENT.phone} AGENT_PASSWORD='${AGENT.password}'`);

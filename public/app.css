@@ -90,6 +90,9 @@ dd { margin: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .pager { margin: 0.75rem 0; display: flex; gap: 1rem; }
 code { background: #f4f4f2; padding: 0.05rem 0.3rem; overflow-wrap: anywhere; }
+/* A USSD screen as the caller saw it: the line breaks are the screen's own,
+   so they are kept, and the width is the width of a phone's screen. */
+pre.screen { margin: 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1rem; white-space: pre-wrap; max-width: 22rem; }
 @media (min-width: 40rem) { .top { display: flex; gap: 1.5rem; align-items: baseline; } .brand { margin: 0; } }
 tr.soon td { background: #fbe9e9; }
 

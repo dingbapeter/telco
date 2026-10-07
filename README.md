@@ -13,6 +13,8 @@ The working name is Telco. Suggested names are in
 - `docs/PRODUCT.md` is what the product does and why it is built this way.
 - `docs/CODES.md` answers what a person actually dials, and who makes each
   kind of code.
+- `docs/USSD.md` is our own dial code: what a caller sees screen by screen,
+  and what happens on a line that drops.
 - `docs/WAITING_ON_FOUNDER.md` lists every open decision, with a
   recommendation for each.
 - `docs/DEPLOY.md` is how to put it on a server, step by step.
@@ -23,10 +25,11 @@ The working name is Telco. Suggested names are in
 - `docs/TESTING.md` records which deliberate breakages each check catches.
 - `docs/SECURITY.md` is the security position and what was found and fixed.
 - `docs/BRIDGE.md`, `docs/PROVIDER.md`, `docs/RETAIL.md`, `docs/DATA.md`,
-  `docs/AGENTS.md`, `docs/AGENT_API.md`, `docs/SELLBACK.md` and
-  `docs/TELCOS.md` cover the phone bridge, the top-up provider, selling
+  `docs/AGENTS.md`, `docs/AGENT_API.md`, `docs/SELLBACK.md`, `docs/CAPS.md`
+  and `docs/TELCOS.md` cover the phone bridge, the top-up provider, selling
   airtime, selling data, agents and shops, the interface their own software
-  uses, buying airtime and data back from people, and the networks.
+  uses, buying airtime and data back from people, the caps that keep money
+  laundering out, and the networks.
 
 ## Running it
 

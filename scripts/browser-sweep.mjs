@@ -28,7 +28,7 @@ const profiles = [
 
 const publicPages = ["/", "/buy", "/sell", "/agent/login", `/t/${process.env.TRANSFER_REF}`, `/o/${process.env.ORDER_REF}`, `/s/${process.env.SELL_REF}`];
 const agentPages = ["/agent", "/agent/buy", "/agent/bulk", `/agent/list/${process.env.BATCH_REF}`, "/agent/statement", "/agent/keys", "/agent/topup", "/agent/withdraw", "/agent/link"];
-const adminPages = ["/admin", "/admin/money", "/admin/transfers", "/admin/orders", "/admin/agents", "/admin/inbound", "/admin/pools", "/admin/numbers", "/admin/bridge", "/admin/bundles", "/admin/settlement", "/admin/settings", "/admin/checklist", "/admin/audit", `/admin/transfers/${process.env.TRANSFER_ID}`, `/admin/agents/${process.env.AGENT_ID}`, "/admin/sellbacks", `/admin/sellbacks/${process.env.SELLBACK_ID}`, "/admin/people", "/admin/find?q=0803"];
+const adminPages = ["/admin", "/admin/money", "/admin/transfers", "/admin/orders", "/admin/agents", "/admin/inbound", "/admin/pools", "/admin/numbers", "/admin/bridge", "/admin/bundles", "/admin/settlement", "/admin/settings", "/admin/checklist", "/admin/dial", `/admin/dial/${process.env.DIAL_ID}`, "/admin/audit", `/admin/transfers/${process.env.TRANSFER_ID}`, `/admin/agents/${process.env.AGENT_ID}`, "/admin/sellbacks", `/admin/sellbacks/${process.env.SELLBACK_ID}`, "/admin/people", "/admin/find?q=0803"];
 
 const problems = [];
 const launchers = { chromium, webkit, firefox };

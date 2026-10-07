@@ -180,18 +180,25 @@ mobile data that may be slow, expensive or both. So:
   stranger and cannot be undone, so the sender has to be able to read it
   back. It is masked again the moment the value lands.
 
-Two channels are designed for and not yet built: a USSD short code of our
-own, so a sender with no data at all can start a transfer from the dial
-pad, which needs an aggregator and a network agreement; and text message
-confirmations to the sender, which the bridge phones can send on each
-network's own SIM once the app is allowed to send.
+Our own short code is built and waits only on the lease. A caller with no
+data at all can send airtime to another network, sell airtime to us, buy
+airtime, check a transfer and read their last few sends from the dial pad,
+on a menu that uses the same pricing, caps and ledger as the website. The
+endpoint the aggregator talks to, and the record kept of every session, are
+described in docs/USSD.md. What is still missing is the contract: a licensed
+aggregator, a monthly fee and each network's agreement.
+
+One channel is designed for and not yet built: text message confirmations
+to the sender, which the bridge phones can send on each network's own SIM
+once the app is allowed to send.
 
 Which code a person dials, and who makes each kind of code, is set out in
 docs/CODES.md. The short version: the airtime transfer codes belong to the
 networks and we only hold each one as a template with the PIN left for the
 phone; our references and agent codes are made here; a buyer paying us by
-USSD is using their own bank's code through the card gateway; and a Telco short
-code waits on an aggregator contract, not on software.
+USSD is using their own bank's code through the card gateway; and our own
+short code is written and tested, waiting on an aggregator contract rather
+than on software.
 
 ## Who uses it
 

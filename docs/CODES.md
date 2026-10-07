@@ -75,27 +75,33 @@ So a buyer with no data at all can still pay by USSD, but only if somebody
 else, or a printed poster, gives them the order reference first. Which is
 why the fourth kind of code matters.
 
-## 4. A short code of our own, for example `*347*88#`. Not built, and not ours to make
+## 4. A short code of our own, for example `*347*88#`. Ours to run, theirs to lease
 
-This is the one thing on this page that does not exist yet, and it cannot
-be written in code. A short code is leased. It needs:
+The code itself is leased, and that part cannot be written in code. It needs:
 
 - a USSD aggregator with a Nigerian Communications Commission licence, and
   through them a connection to each of the four networks;
 - a monthly fee for the code and a per session cost;
 - an agreement with each network, which is the slow part.
 
-Once leased, the aggregator sends each keypress to a web address of ours
-and shows our text on the customer's screen. The product would then offer a
-dial-pad menu for buying airtime and for starting a transfer, with no data
-needed at all. Everything behind it, the pricing, the ledger, the pools,
-the delivery, is already built and would be reused as it stands.
+**Everything on our side of that lease is built and tested.** The aggregator
+sends us one keypress at a time and we answer with one screen; that endpoint,
+the menus behind it, and the record of every session are all in this
+repository and are described in docs/USSD.md. The day a contract is signed,
+the work is: put the shared secret in the environment file, type the code
+into Settings, Dial service, and turn it on.
 
-This is item 15 in docs/WAITING_ON_FOUNDER.md. Until an aggregator is
+What a caller can do from a dial pad with no data at all: send airtime to
+another network, sell airtime to us for credit, buy airtime, check a
+transfer, and read their last few sends. The pricing, the caps, the ledger,
+the pools and the delivery are the same code the website uses, so a rule
+changed in the command centre changes the dial code at the same moment.
+
+The lease is item 15 in docs/WAITING_ON_FOUNDER.md. Until an aggregator is
 signed, the honest position is: **buying from us works today from the page,
 with card, bank transfer or the buyer's own bank USSD code; moving airtime
 off a customer's line will always be the network's own code, dialled by the
-customer; and a Telco short code waits on a contract, not on software.**
+customer; and our own short code waits on a contract, not on software.**
 
 ## What the person buying from us with credit dials
 

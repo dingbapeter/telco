@@ -26,6 +26,7 @@ anybody is logged in or not.
 | Data that dies on our hands | Written off as a loss the day it expires, with a line in the ledger. |
 | Asking the SIMs what the network says they hold | Queued on a timer, dialled by the phone, read and compared with the books. |
 | Caps, blocks, holds, the circle guard on buy-back rates | Every one of them in code, run on every quote and again on every arrival. |
+| The dial code | Each keypress is answered by the server in one database transaction: the menus, the quote, the caps and the record of the session. Nobody watches a dial session, and a session the network drops is closed by the minute timer. See docs/USSD.md. |
 
 ## The four things a person does
 

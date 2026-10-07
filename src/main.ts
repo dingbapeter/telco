@@ -10,6 +10,7 @@ import { expireOrders } from "./orders.ts";
 import { queueDueChecks } from "./balances.ts";
 import { expireSellbacks } from "./sellbacks.ts";
 import { PhoneRail } from "./sendingphone.ts";
+import { closeIdleUssdSessions } from "./web/ussd.ts";
 import { runDeliveryCycle, runPayoutCycle } from "./worker.ts";
 
 const config = loadConfig();
@@ -36,6 +37,7 @@ const timer = setInterval(() => {
   queueDueChecks(db).catch((err: unknown) => console.error("asking the SIMs for their balance failed", err));
   forgetOldSessions(db).catch((err: unknown) => console.error("clearing old sessions failed", err));
   forgetOldAgentSessions(db).catch((err: unknown) => console.error("clearing old agent sessions failed", err));
+  closeIdleUssdSessions(db).catch((err: unknown) => console.error("closing dropped dial sessions failed", err));
 }, 60_000);
 
 // Automatic payouts run only when the provider's keys are in the environment

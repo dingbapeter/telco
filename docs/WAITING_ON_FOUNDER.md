@@ -137,13 +137,19 @@ the service under systemd, and Caddy in front for the certificate.
 
 ### 15. A USSD short code of our own
 
-Today a sender needs a little data to open our page, and dials their own
-network's USSD code to move the airtime. A short code of our own (a sender
-dials, say, *347*88# and follows a menu) would let people with no data
-start a transfer, but it needs a USSD aggregator and, through them, each
-network's agreement, with a monthly cost. **Recommendation:** launch with
-the web page, watch how many senders drop off before dialling, and decide
-on a short code from that number.
+The software for this is finished: the endpoint an aggregator talks to, the
+menus, and the record of every session are built and tested, and described
+in docs/USSD.md. What is left is not ours to write. A short code is leased
+from a USSD aggregator with a Nigerian Communications Commission licence,
+who in turn needs each network's agreement, and there is a monthly fee for
+the code and a cost per session.
+
+What I need from you when you want it: which aggregator, and the shared
+secret they give us, which goes in the environment file on the server and
+nowhere else. Then the code itself goes into Settings, Dial service, and
+the switch beside it is turned on. **Recommendation:** approach an
+aggregator once the web page has real senders, and judge the monthly fee
+against how many of them say they could not open a page.
 
 ### 16. Text message confirmations
 

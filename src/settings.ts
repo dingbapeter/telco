@@ -723,6 +723,38 @@ export const SETTINGS = {
     validate: intBetween(0, 1_000_000_000, "kobo"),
     format: (v) => (v === 0 ? "no cash" : kobo(v)),
   }),
+  // The dialled service. The short code itself is leased from an aggregator,
+  // so it is typed in here the day they allocate it rather than deployed.
+  "ussd.enabled": define({
+    key: "ussd.enabled",
+    group: "Dial service",
+    label: "Answer the dial code",
+    description:
+      "Whether the short code works. Off means anybody who dials it is told politely that it is not open and sent to the website, which is what you want until the aggregator has tested it.",
+    fallback: false,
+    validate: boolean(),
+    format: (v) => (v ? "answering" : "not answering"),
+  }),
+  "ussd.service_code": define({
+    key: "ussd.service_code",
+    group: "Dial service",
+    label: "Our short code",
+    description:
+      "The code people dial, as the aggregator allocated it, for example *347*55#. Used to refuse traffic meant for somebody else's code. Leave it empty to answer whatever arrives, which is useful while the aggregator is still testing.",
+    fallback: "",
+    validate: text(32),
+    format: (v) => (v === "" ? "whatever arrives" : v),
+  }),
+  "ussd.session_minutes": define({
+    key: "ussd.session_minutes",
+    group: "Dial service",
+    label: "How long a dialled session lives",
+    description:
+      "A session with no keypress for this long is finished, and the next keypress starts again at the first screen. The networks drop a session in seconds, so this only needs to be long enough to cover a slow keypress.",
+    fallback: 5,
+    validate: intBetween(1, 60, "minutes"),
+    format: (v) => `${v} minutes`,
+  }),
   "pool.floor_kobo": define({
     key: "pool.floor_kobo",
     group: "Pools",

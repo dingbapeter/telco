@@ -4,6 +4,7 @@ import { registerAudit } from "./admin/audit.ts";
 import { registerBridgeAdmin } from "./admin/bridge.ts";
 import { registerBundles } from "./admin/bundles.ts";
 import { registerChecklist } from "./admin/checklist.ts";
+import { registerDial } from "./admin/dial.ts";
 import { registerFind } from "./admin/find.ts";
 import { registerInbound } from "./admin/inbound.ts";
 import { registerLogin } from "./admin/login.ts";
@@ -25,9 +26,10 @@ import { registerBuy } from "./public/buy.ts";
 import { registerPublic } from "./public/pages.ts";
 import { registerSell } from "./public/sell.ts";
 import { registerBridge } from "./web/bridge.ts";
+import { registerUssd, type UssdConfig } from "./web/ussd.ts";
 import { App } from "./web/http.ts";
 
-export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicBaseUrl?: string; gateway?: PaymentGateway | undefined }): App {
+export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicBaseUrl?: string; gateway?: PaymentGateway | undefined; ussd?: UssdConfig | undefined }): App {
   const app = new App(db, options.publicBaseUrl ?? "");
   app.get("/health", async (_req, pool) => {
     // Knocks on the database rather than reporting that a connection string exists.
@@ -47,8 +49,10 @@ export function buildApp(db: pg.Pool, options: { secureCookies: boolean; publicB
   registerFind(app);
   registerBridgeAdmin(app);
   registerBundles(app);
+  registerDial(app);
   registerAudit(app);
   registerBridge(app);
+  registerUssd(app, { config: options.ussd });
   registerOrders(app);
   registerSettlement(app);
   registerSellbacksAdmin(app);
